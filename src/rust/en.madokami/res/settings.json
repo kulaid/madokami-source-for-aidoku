@@ -1,0 +1,20 @@
+[
+    {
+        "type": "group",
+        "title": "Login",
+        "items": [
+            {
+                "type": "text",
+                "key": "username",
+                "notification": "username",
+                "placeholder": "Username"
+            },
+            {
+                "type": "text",
+                "key": "password",
+                "notification": "password",
+                "placeholder": "Password"
+            }
+        ]
+    }
+]

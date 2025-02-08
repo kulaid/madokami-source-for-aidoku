@@ -32,8 +32,8 @@ jobs:
          ~/.cargo/registry/cache
          ~/.cargo/git/db
          ~/.cargo/bin
-         src/rust/**/target/
-        key: ${{ runner.os }}-cargo3-${{ hashFiles('**/Cargo.lock') }}
+       #  src/rust/**/target/
+        key: ${{ runner.os }}-cargo3-v2${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-cargo3-
     -
@@ -68,11 +68,17 @@ jobs:
       name: Build Rust sources
       run: |
         for src in ./src/rust/*; do
-          (
-            cd "$src"
-            ./build.sh -a
-          )
+          if [ -f "$src/build.sh" ]; then
+            chmod +x "$src/build.sh"
+            (
+              cd "$src"
+              ./build.sh -a
+            )
+          else
+            echo "Skipping $src because build.sh is missing."
+          fi
         done
+
     -
       name: Building source list
       run: |
