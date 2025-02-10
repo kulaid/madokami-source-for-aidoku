@@ -41,17 +41,39 @@ fn add_auth_to_request(request: Request) -> Result<Request> {
 /// Extracts a manga title from the given path by iterating backwards through path segments.
 fn extract_manga_title(path: &str) -> String {
     let parts: Vec<&str> = path.split('/').collect();
-    let mut found_title = String::new();
+    
+    // Work backwards through path segments to find main title
     for part in parts.iter().rev() {
         if !part.is_empty() {
             let decoded = url_decode(part);
-            found_title = decoded.clone();
-            if !decoded.starts_with('!') {
-                return found_title;
+            // If it's not VIZBIG and not starting with !, it's the title
+            if !decoded.contains("VIZBIG") && !decoded.starts_with('!') {
+                return decoded;
             }
         }
     }
-    found_title
+    String::new()
+}
+
+fn get_parent_path(path: &str) -> Option<String> {
+    let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    let mut parent_parts = Vec::new();
+    
+    // Build parent path stopping before VIZBIG or ! prefixed directories
+    for part in parts {
+        let decoded = url_decode(part);
+        if !decoded.contains("VIZBIG") && !decoded.starts_with('!') {
+            parent_parts.push(part);
+        } else {
+            break;
+        }
+    }
+
+    if !parent_parts.is_empty() {
+        Some(format!("/{}", parent_parts.join("/")))
+    } else {
+        None
+    }
 }
 
 /// Parses chapter and volume numbers from a filename
@@ -297,7 +319,6 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
 
 #[get_manga_details]
 fn get_manga_details(id: String) -> Result<Manga> {
-    // When a manga is selected, load its details page
     let mut html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get))?.html()?;
     
     let mut authors = Vec::new();
@@ -322,46 +343,30 @@ fn get_manga_details(id: String) -> Result<Manga> {
 
     // If missing metadata, try parent directory
     if authors.is_empty() || genres.is_empty() || cover_url.is_empty() {
-        let parts: Vec<&str> = id.split('/').filter(|s| !s.is_empty()).collect();
-        if parts.len() > 1 {
-            let mut parent_parts = Vec::new();
-            let mut found_parent = false;
-            for part in parts.iter() {
-                let decoded = url_decode(part);
-                if !decoded.starts_with('!') {
-                    parent_parts.push(*part);
-                    found_parent = true;
-                } else if !found_parent {
-                    parent_parts.push(*part);
-                }
-            }
-            
-            if !parent_parts.is_empty() {
-                let parent_path = format!("/{}", parent_parts.join("/"));
-                if let Ok(parent_html) = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, parent_path), HttpMethod::Get))?.html() {
-                    html = parent_html;
+        if let Some(parent_path) = get_parent_path(&id) {
+            if let Ok(parent_html) = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, parent_path), HttpMethod::Get))?.html() {
+                html = parent_html;
                     
-                    // Try to get missing metadata from parent
-                    if cover_url.is_empty() {
-                        cover_url = html.select("div.manga-info img[itemprop=\"image\"]").attr("src").read();
-                    }
-                    if authors.is_empty() {
-                        for author_node in html.select("a[itemprop=\"author\"]").array() {
-                            if let Ok(node) = author_node.as_node() {
-                                authors.push(node.text().read());
-                            }
+                // Try to get missing metadata from parent
+                if cover_url.is_empty() {
+                    cover_url = html.select("div.manga-info img[itemprop=\"image\"]").attr("src").read();
+                }
+                if authors.is_empty() {
+                    for author_node in html.select("a[itemprop=\"author\"]").array() {
+                        if let Ok(node) = author_node.as_node() {
+                            authors.push(node.text().read());
                         }
                     }
-                    if genres.is_empty() {
-                        for genre_node in html.select("div.genres a.tag").array() {
-                            if let Ok(node) = genre_node.as_node() {
-                                genres.push(node.text().read());
-                            }
+                }
+                if genres.is_empty() {
+                    for genre_node in html.select("div.genres a.tag").array() {
+                        if let Ok(node) = genre_node.as_node() {
+                            genres.push(node.text().read());
                         }
                     }
-                    if status == MangaStatus::Unknown && html.select("span.scanstatus").text().read() == "Yes" {
-                        status = MangaStatus::Completed;
-                    }
+                }
+                if status == MangaStatus::Unknown && html.select("span.scanstatus").text().read() == "Yes" {
+                    status = MangaStatus::Completed;
                 }
             }
         }
