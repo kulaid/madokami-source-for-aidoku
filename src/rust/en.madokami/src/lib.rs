@@ -97,7 +97,7 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
     for row in html.select("table#index-table > tbody > tr").array() {
         if let Ok(node) = row.as_node() {
             let title_node = node.select("td:nth-child(1) a");
-            let title = title_node.text().read();
+            let title = clean_filename(&title_node.text().read());
             
             // Skip entries that are directories or start with '!'
             if title.ends_with('/') || title.starts_with('!') {

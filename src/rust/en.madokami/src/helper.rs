@@ -73,18 +73,24 @@ pub fn clean_filename(filename: &str) -> String {
     // Common manga archive extensions to remove
     const EXTENSIONS: &[&str] = &[
         ".cbz", ".zip", ".cbr", ".rar", ".7z", ".pdf", ".epub", 
-        ".png", ".jpg", ".jpeg", ".gif"
+        ".png", ".jpg", ".jpeg", ".gif", ".xml", ".txt"
     ];
 
     let mut cleaned = filename.to_string();
+    let cleaned_lower = cleaned.to_lowercase();
     
     // Remove any of the specified extensions
     for ext in EXTENSIONS {
-        if cleaned.to_lowercase().ends_with(ext) {
+        if cleaned_lower.ends_with(ext) {
             cleaned.truncate(cleaned.len() - ext.len());
-            break; // Only remove one extension
+            println!("Removed extension {} from {}", ext, filename);
+            break;
         }
     }
+
+    // Print debug info
+    println!("Original: {}", filename);
+    println!("Cleaned: {}", cleaned);
 
     cleaned
 }
