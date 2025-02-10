@@ -139,34 +139,30 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
 fn get_manga_details(id: String) -> Result<Manga> {
     let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get))?.html()?;
     
-    let cover_url = html.select("div.manga-info img[itemprop=\"image\"]").attr("src").read();
-    let mut authors = Vec::new();
-    let mut genres = Vec::new();
-    let status = if html.select("span.scanstatus").text().read() == "Yes" {
-        MangaStatus::Completed
-    } else {
-        MangaStatus::Unknown
-    };
-
-    for author in html.select("a[itemprop=\"author\"]").array() {
-        if let Ok(node) = author.as_node() {
-            authors.push(node.text().read());
-        }
-    }
-    
-    for genre in html.select("div.genres a.tag").array() {
-        if let Ok(node) = genre.as_node() {
-            genres.push(node.text().read());
-        }
-    }
+    // Add these new metadata extraction
+    let description = html.select("div.description").text().read();
+    let alt_titles = html.select("div.alt-titles").text().read();
+    let rating = html.select("div.rating").text().read();
     
     Ok(Manga {
         id: id.clone(),
         title: extract_manga_title(&id),
-        author: authors.join(", "),
-        cover: cover_url,
-        categories: genres,
-        status,
+        author: html.select("a[itemprop=\"author\"]")
+                   .array()
+                   .map(|n| n.as_node().unwrap().text().read())
+                   .collect::<Vec<_>>()
+                   .join(", "),
+        description,
+        cover: html.select("div.manga-info img[itemprop=\"image\"]").attr("src").read(),
+        categories: html.select("div.genres a.tag")
+                       .array()
+                       .map(|n| n.as_node().unwrap().text().read())
+                       .collect(),
+        status: if html.select("span.scanstatus").text().read() == "Yes" {
+            MangaStatus::Completed
+        } else {
+            MangaStatus::Unknown
+        },
         url: format!("{}{}", BASE_URL, id),
         viewer: MangaViewer::Rtl,
         ..Default::default()
@@ -208,7 +204,13 @@ fn modify_image_request(request: Request) {
     if let Ok(request_with_auth) = add_auth_to_request(request) {
         request_with_auth
             .header("Referer", BASE_URL)
-            .header("Accept", "image/*");
+            .header("Accept", "image/*")
+            // Add cache control headers
+            .header("Cache-Control", "no-cache")
+            .header("Pragma", "no-cache")
+            // Add retry headers 
+            .header("X-Retry-After", "1")  // Retry after 1 second
+            .header("X-Max-Retries", "3"); // Maximum 3 retries
     }
 }
 
