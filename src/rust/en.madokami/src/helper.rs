@@ -83,14 +83,9 @@ pub fn clean_filename(filename: &str) -> String {
     for ext in EXTENSIONS {
         if cleaned_lower.ends_with(ext) {
             cleaned.truncate(cleaned.len() - ext.len());
-            println!("Removed extension {} from {}", ext, filename);
             break;
         }
     }
-
-    // Print debug info
-    println!("Original: {}", filename);
-    println!("Cleaned: {}", cleaned);
 
     cleaned
 }

@@ -135,7 +135,7 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
             } else {
                 chapters.push(Chapter {
                     id: url.clone(),
-                    title: url_decode(&title),
+                    title: clean_filename(&url_decode(&title)),
                     chapter: if info.chapter > 0.0 { info.chapter } else { -1.0 },
                     volume: if info.volume > 0.0 { info.volume } else { -1.0 },
                     date_updated,
