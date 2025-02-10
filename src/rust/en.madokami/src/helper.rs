@@ -1,8 +1,7 @@
 use aidoku::{
-    error::Result,
     std::String,
 };
-use alloc::string::ToString;
+use alloc::{string::ToString, vec::Vec};
 
 /// Helper struct to store parsed chapter info.
 #[derive(Default)]
@@ -69,7 +68,7 @@ pub fn url_encode(input: &str) -> String {
     encoded
 }
 
-/// Removes common manga archive extensions and cleans up the filename.
+/// Removes common manga archive extensions from the filename but keeps other information.
 pub fn clean_filename(filename: &str) -> String {
     // Common manga archive extensions to remove
     const EXTENSIONS: &[&str] = &[
@@ -77,26 +76,8 @@ pub fn clean_filename(filename: &str) -> String {
         ".png", ".jpg", ".jpeg", ".gif"
     ];
 
-    // First, remove any release tags in brackets or parentheses from the end
     let mut cleaned = filename.to_string();
     
-    // Remove things like (Digital), [LuCaZ], etc. from the end
-    while let Some(last_bracket) = cleaned.rfind(['[', '(']) {
-        let matching_bracket = if cleaned[last_bracket..].starts_with('[') { ']' } else { ')' };
-        if let Some(end_bracket) = cleaned[last_bracket..].find(matching_bracket) {
-            let end_pos = last_bracket + end_bracket + 1;
-            // Only remove if this is at/near the end of the filename
-            if end_pos + 1 >= cleaned.len() || cleaned[end_pos..].trim().is_empty() {
-                cleaned.truncate(last_bracket);
-                cleaned = cleaned.trim().to_string();
-            } else {
-                break;
-            }
-        } else {
-            break;
-        }
-    }
-
     // Remove any of the specified extensions
     for ext in EXTENSIONS {
         if cleaned.to_lowercase().ends_with(ext) {
@@ -105,20 +86,19 @@ pub fn clean_filename(filename: &str) -> String {
         }
     }
 
-    // Clean up any remaining whitespace
-    cleaned.trim().to_string()
+    cleaned
 }
 
 /// Helper function to check if a character is likely part of a chapter number.
-pub fn is_chapter_char(c: char) -> bool {
-    c.is_ascii_digit() || c == '.' || c == '-'
+pub fn is_chapter_char(c: &char) -> bool {
+    c.is_ascii_digit() || *c == '.' || *c == '-'
 }
 
 /// Helper function to extract just the numeric part from a chapter identifier.
 pub fn extract_numeric_part(text: &str) -> String {
     text.chars()
         .skip_while(|c| !c.is_ascii_digit())
-        .take_while(is_chapter_char)
+        .take_while(|c| is_chapter_char(c))
         .collect()
 }
 
@@ -216,7 +196,7 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
     }
 
     // (3) Alternatively, if an explicit "c" marker is present (and not part of a word).
-    if let Some(pos) = clean_name.find("c") {
+    if let Some(pos) = clean_name.find('c') {
         if pos == 0 || !clean_name.as_bytes()[pos - 1].is_ascii_alphabetic() {
             let after = &clean_name[pos + 1..];
             let chapter_str: String = after
