@@ -1,7 +1,6 @@
 #![no_std]
 extern crate alloc;
 
-use alloc::string::ToString; // Import the ToString trait for .to_string()
 use aidoku::{
     error::Result,
     prelude::*,
@@ -127,7 +126,8 @@ fn url_encode(input: &str) -> String {
 /// 2. Else, if the filename contains an explicit chapter marker (for example " - c") then we
 ///    extract the chapter number. If a dash (“-”) is found after the marker (e.g. "c001-007")
 ///    we treat this as a chapter range.
-/// 3. Otherwise we fall back to extracting trailing digits as the chapter number.
+/// 3. Otherwise, we scan the filename for a number that is preceded by a delimiter (like whitespace
+///    or a dash) and, if that number is less than 1000, we use it as the chapter number.
 fn parse_chapter_info(filename: &str) -> ChapterInfo {
     let mut info = ChapterInfo::default();
     // Use a URL-decoded, lowercase version for matching.
@@ -146,20 +146,14 @@ fn parse_chapter_info(filename: &str) -> ChapterInfo {
         }
     }
 
-    // (2) Look for an explicit chapter marker.
+    // (2) Look for an explicit chapter marker (" - c").
     if let Some(pos) = clean.find(" - c") {
         let chapter_part = &clean[pos + 4..]; // Skip " - c"
         // Check if a chapter range is indicated by a dash.
         if let Some(dash_pos) = chapter_part.find('-') {
-            let start_str: String = chapter_part
-                .chars()
-                .take_while(|c| c.is_ascii_digit() || *c == '.')
-                .collect();
+            let start_str: String = chapter_part.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
             let end_sub = &chapter_part[dash_pos + 1..];
-            let end_str: String = end_sub
-                .chars()
-                .take_while(|c| c.is_ascii_digit() || *c == '.')
-                .collect();
+            let end_str: String = end_sub.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
             if !start_str.is_empty() && !end_str.is_empty() {
                 if let (Ok(start), Ok(end)) = (start_str.parse::<f32>(), end_str.parse::<f32>()) {
                     info.chapter = start;
@@ -169,10 +163,7 @@ fn parse_chapter_info(filename: &str) -> ChapterInfo {
             }
         } else {
             // Single chapter indicated.
-            let chapter_str: String = chapter_part
-                .chars()
-                .take_while(|c| c.is_ascii_digit() || *c == '.')
-                .collect();
+            let chapter_str: String = chapter_part.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
             if !chapter_str.is_empty() {
                 if let Ok(ch) = chapter_str.parse::<f32>() {
                     info.chapter = ch;
@@ -182,25 +173,37 @@ fn parse_chapter_info(filename: &str) -> ChapterInfo {
         }
     }
 
-    // Alternatively, if an explicit "c" marker is present (even without the preceding " - "),
-    // and it isn’t part of a word, try to use it.
-    if let Some(pos) = clean.find("c") {
-        if pos == 0 || !clean.as_bytes()[pos - 1].is_ascii_alphabetic() {
-            let after = &clean[pos + 1..];
-            let chapter_str: String = after
-                .chars()
-                .take_while(|c| c.is_ascii_digit() || *c == '.')
-                .collect();
-            if !chapter_str.is_empty() {
-                if let Ok(ch) = chapter_str.parse::<f32>() {
-                    info.chapter = ch;
-                    return info;
+    // (3) Fallback: scan the string for a group of digits that appears after a delimiter.
+    // Convert the clean string into a vector of chars for easier indexing.
+    let chars: Vec<char> = clean.chars().collect();
+    for i in 0..chars.len() {
+        if chars[i].is_ascii_digit() {
+            // Check that this digit group is preceded by a delimiter (whitespace, '-' or '_') or is at the start.
+            if i == 0 || {
+                let prev = chars[i - 1];
+                prev.is_whitespace() || prev == '-' || prev == '_'
+            } {
+                // Accumulate digits (and possibly one dot).
+                let mut number_str = String::new();
+                let mut j = i;
+                while j < chars.len() && (chars[j].is_ascii_digit() || chars[j] == '.') {
+                    number_str.push(chars[j]);
+                    j += 1;
+                }
+                if !number_str.is_empty() {
+                    if let Ok(num) = number_str.parse::<f32>() {
+                        // Heuristic: if the number is less than 1000, assume it's the chapter number.
+                        if num < 1000.0 {
+                            info.chapter = num;
+                            return info;
+                        }
+                    }
                 }
             }
         }
     }
 
-    // (3) Fallback: extract trailing digits as the chapter number.
+    // As a final fallback, try extracting trailing digits.
     let trailing: String = clean
         .chars()
         .rev()
