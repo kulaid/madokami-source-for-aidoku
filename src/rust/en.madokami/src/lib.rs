@@ -55,6 +55,7 @@ fn extract_manga_title(path: &str) -> String {
 }
 
 /// Parses chapter and volume numbers from a filename
+/// Parses chapter and volume numbers from a filename
 fn parse_chapter_info(filename: &str) -> ChapterInfo {
     let mut info = ChapterInfo::default();
     let clean_name = url_decode(filename).to_lowercase();
@@ -80,9 +81,10 @@ fn parse_chapter_info(filename: &str) -> ChapterInfo {
             .collect();
         
         for (i, part) in range_parts.iter().enumerate() {
-            if let Some(num_str) = part.trim_start_matches(|c: char| !c.is_ascii_digit())
-                .trim_end_matches(|c: char| !c.is_ascii_digit())
-            {
+            let num_str = part.trim_start_matches(|c: char| !c.is_ascii_digit())
+                            .trim_end_matches(|c: char| !c.is_ascii_digit());
+            
+            if !num_str.is_empty() {
                 if let Ok(num) = num_str.parse::<f32>() {
                     if i == 0 {
                         info.chapter = num;
@@ -121,7 +123,7 @@ fn parse_chapter_info(filename: &str) -> ChapterInfo {
                 if let Ok(num) = num_str.parse::<f32>() {
                     // Only use the number if we're confident it's a chapter number
                     // (e.g., not a year or other metadata)
-                    if num < 2000 {  // Avoid matching years
+                    if num < 2000.0 {  // Avoid matching years
                         info.chapter = num;
                         break;
                     }
