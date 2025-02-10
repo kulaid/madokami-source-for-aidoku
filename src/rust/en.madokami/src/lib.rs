@@ -16,6 +16,24 @@ use base64::{engine::general_purpose, Engine};
 
 const BASE_URL: &str = "https://manga.madokami.al";
 
+/// Extracts a manga title from the given path by iterating backwards through path segments.
+/// This function decodes each segment and returns the first one that does not start with '!' and
+/// does not contain markers like "VIZBIG". For example, it will return "Vinland Saga" for:
+/// "/Manga/V/VI/VINL/Vinland%20Saga/%21Vinland%20Saga%20%5Bdanke-Empire%5D%7BHD%7D"
+fn extract_manga_title(path: &str) -> String {
+    let parts: Vec<&str> = path.split('/').collect();
+    for part in parts.iter().rev() {
+        if !part.is_empty() {
+            let decoded = url_decode(part);
+            // Skip entries starting with '!' or containing markers we don't want.
+            if !decoded.contains("VIZBIG") && !decoded.starts_with('!') {
+                return decoded;
+            }
+        }
+    }
+    String::new()
+}
+
 /// Helper struct to store parsed chapter info.
 #[derive(Default)]
 struct ChapterInfo {
@@ -230,8 +248,8 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
             if path.ends_with('/') {
                 continue;
             }
-            // Convert the last segment into a String.
-            let title = path.split('/').last().unwrap_or("").to_string();
+            // Use extract_manga_title to derive the title from the full path.
+            let title = extract_manga_title(&path);
             mangas.push(Manga {
                 id: path.clone(),
                 title,
@@ -316,7 +334,6 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
 
 #[get_manga_details]
 fn get_manga_details(id: String) -> Result<Manga> {
-    // Removed unnecessary `mut` since we don't modify html after creation.
     let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get))?.html()?;
     
     let mut authors = Vec::new();
@@ -340,7 +357,8 @@ fn get_manga_details(id: String) -> Result<Manga> {
     
     Ok(Manga {
         id: id.clone(),
-        title: id.clone(), // Clone id so it isn’t moved
+        // Use extract_manga_title to derive a clean title from the id.
+        title: extract_manga_title(&id),
         author: authors.join(", "),
         cover: cover_url,
         categories: genres,
