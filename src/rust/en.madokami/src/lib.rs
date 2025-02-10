@@ -18,7 +18,7 @@ use helper::*;
 
 const BASE_URL: &str = "https://manga.madokami.al";
 
-/// Add auth headers to requests if credentials exist
+/// Adds HTTP Basic authentication headers to a request if credentials are available.
 fn add_auth_to_request(request: Request) -> Result<Request> {
     let username = defaults_get("username")?.as_string()?.read();
     let password = defaults_get("password")?.as_string()?.read();
@@ -35,7 +35,7 @@ fn add_auth_to_request(request: Request) -> Result<Request> {
 
 #[get_manga_list]
 fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
-    // Build URL based on whether we're searching or getting recent
+    // Build URL based on whether we're searching or getting recent.
     let url = if let Some(query) = filters.into_iter()
         .find(|f| matches!(f.kind, FilterType::Title))
         .and_then(|f| f.value.as_string().ok())
@@ -48,7 +48,7 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
 
     let html = add_auth_to_request(Request::new(url.clone(), HttpMethod::Get))?.html()?;
     
-    // Select appropriate elements based on page type
+    // Select appropriate elements based on page type.
     let selector = if url.ends_with("/recent") {
         "table.mobile-files-table tbody tr td:nth-child(1) a:nth-child(1)"
     } else {
@@ -120,7 +120,7 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
             } else {
                 chapters.push(Chapter {
                     id: url.clone(),
-                    title: clean_filename(&url_decode(&title)),
+                    title: url_decode(&title),
                     chapter: if info.chapter > 0.0 { info.chapter } else { -1.0 },
                     volume: if info.volume > 0.0 { info.volume } else { -1.0 },
                     date_updated,
@@ -137,22 +137,58 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
 
 #[get_manga_details]
 fn get_manga_details(id: String) -> Result<Manga> {
-    let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get))?.html()?;
+    let mut html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get))?.html()?;
+    
+    // Get metadata from the current page.
+    let mut authors: Vec<String> = html.select("a[itemprop=\"author\"]")
+        .array()
+        .filter_map(|n| n.as_node().ok().map(|node| node.text().read()))
+        .collect();
+    let mut genres: Vec<String> = html.select("div.genres a.tag")
+        .array()
+        .filter_map(|n| n.as_node().ok().map(|node| node.text().read()))
+        .collect();
+    let mut status = MangaStatus::Unknown;
+    let mut cover_url = html.select("div.manga-info img[itemprop=\"image\"]").attr("src").read();
+    
+    if html.select("span.scanstatus").text().read() == "Yes" {
+        status = MangaStatus::Completed;
+    }
+    
+    // If metadata is missing, try using the parent directory.
+    if authors.is_empty() || genres.is_empty() || cover_url.is_empty() {
+        if let Some(parent_path) = get_parent_path(&id) {
+            if let Ok(parent_html) = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, parent_path), HttpMethod::Get))?.html() {
+                if cover_url.is_empty() {
+                    cover_url = parent_html.select("div.manga-info img[itemprop=\"image\"]").attr("src").read();
+                }
+                if authors.is_empty() {
+                    authors = parent_html.select("a[itemprop=\"author\"]")
+                        .array()
+                        .filter_map(|n| n.as_node().ok().map(|node| node.text().read()))
+                        .collect();
+                }
+                if genres.is_empty() {
+                    genres = parent_html.select("div.genres a.tag")
+                        .array()
+                        .filter_map(|n| n.as_node().ok().map(|node| node.text().read()))
+                        .collect();
+                }
+                if status == MangaStatus::Unknown && parent_html.select("span.scanstatus").text().read() == "Yes" {
+                    status = MangaStatus::Completed;
+                }
+            }
+        }
+    }
     
     Ok(Manga {
         id: id.clone(),
+        // Use extract_manga_title to derive a clean title from the id.
         title: extract_manga_title(&id),
-        author: html.select("a[itemprop=\"author\"]")
-                   .array()
-                   .map(|n| n.as_node().unwrap().text().read())
-                   .collect::<Vec<_>>()
-                   .join(", "),
-        cover: html.select("div.manga-info img[itemprop=\"image\"]").attr("src").read(),
-        categories: html.select("div.genres a.tag")
-                       .array()
-                       .map(|n| n.as_node().unwrap().text().read())
-                       .collect(),
-        status: MangaStatus::Unknown,
+        author: authors.join(", "),
+        cover: cover_url,
+        categories: genres,
+        status,
         url: format!("{}{}", BASE_URL, id),
         viewer: MangaViewer::Rtl,
         ..Default::default()
@@ -194,13 +230,7 @@ fn modify_image_request(request: Request) {
     if let Ok(request_with_auth) = add_auth_to_request(request) {
         request_with_auth
             .header("Referer", BASE_URL)
-            .header("Accept", "image/*")
-            // Add cache control headers
-            .header("Cache-Control", "no-cache")
-            .header("Pragma", "no-cache")
-            // Add retry headers 
-            .header("X-Retry-After", "1")  // Retry after 1 second
-            .header("X-Max-Retries", "3"); // Maximum 3 retries
+            .header("Accept", "image/*");
     }
 }
 
