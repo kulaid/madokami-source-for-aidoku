@@ -16,17 +16,22 @@ use base64::{engine::general_purpose, Engine};
 
 const BASE_URL: &str = "https://manga.madokami.al";
 
-/// Extracts a manga title from the given path by iterating backwards through path segments.
-/// This function decodes each segment and returns the first one that does not start with '!' and
-/// does not contain markers like "VIZBIG". For example, it will return "Vinland Saga" for:
-/// "/Manga/V/VI/VINL/Vinland%20Saga/%21Vinland%20Saga%20%5Bdanke-Empire%5D%7BHD%7D"
+/// Extracts a manga title from the given path by trimming any leading/trailing slashes,
+/// splitting on '/', URL-decoding each segment, and returning the first segment (from the end)
+/// that does not start with '!' and does not contain unwanted markers (like "VIZBIG").
+///
+/// For example, for:
+///   "/Manga/V/VI/VINL/Vinland%20Saga/%21Vinland%20Saga%20%5Bdanke-Empire%5D%7BHD%7D"
+/// it returns "Vinland Saga".
 fn extract_manga_title(path: &str) -> String {
-    let parts: Vec<&str> = path.split('/').collect();
+    // Remove any leading/trailing slashes.
+    let trimmed = path.trim_matches('/');
+    let parts: Vec<&str> = trimmed.split('/').collect();
     for part in parts.iter().rev() {
         if !part.is_empty() {
             let decoded = url_decode(part);
-            // Skip entries starting with '!' or containing markers we don't want.
-            if !decoded.contains("VIZBIG") && !decoded.starts_with('!') {
+            // Skip if the decoded segment starts with '!' or contains unwanted markers.
+            if !decoded.starts_with('!') && !decoded.contains("VIZBIG") {
                 return decoded;
             }
         }
