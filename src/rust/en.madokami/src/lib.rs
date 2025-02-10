@@ -15,21 +15,26 @@ use base64::{engine::general_purpose, Engine};
 
 const BASE_URL: &str = "https://manga.madokami.al";
 
+/// Removes known file extensions (".cbz" and ".zip") from the end of a filename.
+fn remove_file_extension(s: &str) -> String {
+    if s.len() > 4 {
+        let s_lower = s.to_lowercase();
+        if s_lower.ends_with(".cbz") || s_lower.ends_with(".zip") {
+            return s[..s.len()-4].to_string();
+        }
+    }
+    s.to_string()
+}
+
 /// Extracts a manga title from the given path by trimming any leading/trailing slashes,
 /// splitting on '/', URL-decoding each segment, and returning the first segment (from the end)
 /// that does not start with '!' and does not contain unwanted markers (like "VIZBIG").
-///
-/// For example, for:
-///   "/Manga/V/VI/VINL/Vinland%20Saga/%21Vinland%20Saga%20%5Bdanke-Empire%5D%7BHD%7D"
-/// it returns "Vinland Saga".
 fn extract_manga_title(path: &str) -> String {
-    // Remove any leading/trailing slashes.
     let trimmed = path.trim_matches('/');
     let parts: Vec<&str> = trimmed.split('/').collect();
     for part in parts.iter().rev() {
         if !part.is_empty() {
             let decoded = url_decode(part);
-            // Skip if the decoded segment starts with '!' or contains unwanted markers.
             if !decoded.starts_with('!') && !decoded.contains("VIZBIG") {
                 return decoded;
             }
@@ -41,11 +46,8 @@ fn extract_manga_title(path: &str) -> String {
 /// Helper struct to store parsed chapter info.
 #[derive(Default)]
 struct ChapterInfo {
-    /// If this file is a chapter, this will be the chapter number.
     chapter: f32,
-    /// If this file is a volume, this will be its volume number.
     volume: f32,
-    /// If the filename indicates a range (for example “c001-007”), this holds the start and end.
     chapter_range: Option<(f32, f32)>,
 }
 
@@ -118,32 +120,23 @@ fn url_encode(input: &str) -> String {
     encoded
 }
 
-/// Revised chapter/volume parser.
-///
-/// Now accepts the manga title as a second parameter. First, if the cleaned filename starts with
-/// the manga title then any trailing digits are taken as the chapter number. Otherwise the
-/// parser checks for a volume marker, an explicit chapter marker (e.g. " - c"), an explicit "c"
-/// marker, and finally scans for a group of digits preceded by a non-alphanumeric character.
-///
-/// If a found number is less than 1000 it is assumed to be a chapter number.
+/// Revised chapter/volume parser that now accepts the manga title as a second parameter.
+/// (A) If the cleaned filename begins with the manga title, any trailing digits are used.
+/// (B) Otherwise it checks for a volume marker (" v"), an explicit chapter marker (" - c"),
+/// an explicit "c" marker, scans for digits after a non-alphanumeric delimiter, and finally
+/// falls back to trailing digits.
 fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
     let mut info = ChapterInfo::default();
     let clean_name = url_decode(filename).to_lowercase();
     let clean_manga = manga_title.to_lowercase();
 
-    // (A) If the filename equals the manga title exactly, assume no chapter.
     if clean_name.trim() == clean_manga.trim() {
         return info;
     }
 
-    // (B) If the filename begins with the manga title, try to extract trailing digits.
     if clean_name.starts_with(&clean_manga) {
         let remaining = clean_name[clean_manga.len()..].trim();
-        // Extract the first contiguous group of digits (and possibly a dot).
-        let digits: String = remaining
-            .chars()
-            .take_while(|c| c.is_ascii_digit() || *c == '.')
-            .collect();
+        let digits: String = remaining.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
         if !digits.is_empty() {
             if let Ok(num) = digits.parse::<f32>() {
                 info.chapter = num;
@@ -152,7 +145,6 @@ fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
         }
     }
 
-    // (1) Check for a volume marker (e.g. " v01").
     if let Some(pos) = clean_name.find(" v") {
         let after = &clean_name[pos + 2..];
         let vol_str: String = after.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
@@ -164,19 +156,12 @@ fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
         }
     }
 
-    // (2) Look for an explicit chapter marker (" - c").
     if let Some(pos) = clean_name.find(" - c") {
-        let chapter_part = &clean_name[pos + 4..]; // Skip " - c"
+        let chapter_part = &clean_name[pos + 4..];
         if let Some(dash_pos) = chapter_part.find('-') {
-            let start_str: String = chapter_part
-                .chars()
-                .take_while(|c| c.is_ascii_digit() || *c == '.')
-                .collect();
+            let start_str: String = chapter_part.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
             let end_sub = &chapter_part[dash_pos + 1..];
-            let end_str: String = end_sub
-                .chars()
-                .take_while(|c| c.is_ascii_digit() || *c == '.')
-                .collect();
+            let end_str: String = end_sub.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
             if !start_str.is_empty() && !end_str.is_empty() {
                 if let (Ok(start), Ok(end)) = (start_str.parse::<f32>(), end_str.parse::<f32>()) {
                     info.chapter = start;
@@ -185,10 +170,7 @@ fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
                 }
             }
         } else {
-            let chapter_str: String = chapter_part
-                .chars()
-                .take_while(|c| c.is_ascii_digit() || *c == '.')
-                .collect();
+            let chapter_str: String = chapter_part.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
             if !chapter_str.is_empty() {
                 if let Ok(ch) = chapter_str.parse::<f32>() {
                     info.chapter = ch;
@@ -198,14 +180,10 @@ fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
         }
     }
 
-    // (3) Alternatively, if an explicit "c" marker is present (and not part of a word).
     if let Some(pos) = clean_name.find("c") {
         if pos == 0 || !clean_name.as_bytes()[pos - 1].is_ascii_alphabetic() {
             let after = &clean_name[pos + 1..];
-            let chapter_str: String = after
-                .chars()
-                .take_while(|c| c.is_ascii_digit() || *c == '.')
-                .collect();
+            let chapter_str: String = after.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
             if !chapter_str.is_empty() {
                 if let Ok(ch) = chapter_str.parse::<f32>() {
                     info.chapter = ch;
@@ -215,7 +193,6 @@ fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
         }
     }
 
-    // (4) Fallback: scan for a group of digits that appears after a non-alphanumeric delimiter.
     let chars: Vec<char> = clean_name.chars().collect();
     for i in 0..chars.len() {
         if chars[i].is_ascii_digit() {
@@ -238,7 +215,6 @@ fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
         }
     }
 
-    // (5) Final fallback: extract trailing digits.
     let trailing: String = clean_name
         .chars()
         .rev()
@@ -257,7 +233,6 @@ fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
     info
 }
 
-/// get_manga_list no longer fetches covers (due to Aidoku limitations), so only minimal data is provided.
 #[get_manga_list]
 fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
     let mut query = String::new();
@@ -291,12 +266,11 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
             if path.ends_with('/') {
                 continue;
             }
-            // Use extract_manga_title to derive the title from the full path.
             let title = extract_manga_title(&path);
             mangas.push(Manga {
                 id: path.clone(),
                 title,
-                cover: String::new(), // Empty cover URL for performance
+                cover: String::new(),
                 url: format!("{}{}", BASE_URL, path),
                 status: MangaStatus::Unknown,
                 viewer: MangaViewer::Rtl,
@@ -311,43 +285,28 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
     })
 }
 
-/// In get_chapter_list we now pass the manga title to the chapter parser so that filenames like
-/// "Hunter x Hunter 400 (2022) (Digital) (LuCaZ).cbz" are correctly classified as chapters.
 #[get_chapter_list]
 fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
     let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get))?.html()?;
     let mut chapters = Vec::new();
-    // Extract the manga title from the id.
     let manga_title = extract_manga_title(&id);
     
     for row in html.select("table#index-table > tbody > tr").array() {
         if let Ok(node) = row.as_node() {
             let title_node = node.select("td:nth-child(1) a");
-            let title = title_node.text().read();
-            
-            // Skip entries that are directories or start with '!'
-            if title.ends_with('/') || title.starts_with('!') {
+            let raw_title = title_node.text().read();
+            if raw_title.ends_with('/') || raw_title.starts_with('!') {
                 continue;
             }
-
-            let read_link = node.select("td:nth-child(6) a").first();
-            let base_url = read_link.attr("href").read();
-            let url = if let Some(reader_part) = base_url.split("/reader").last() {
-                format!("/reader{}", reader_part)
-            } else {
-                continue;
-            };
-
-            // Parse the chapter/volume information from the filename,
-            // passing the manga title so that numbers appended after the title are captured.
-            let info = parse_chapter_info(&title, &manga_title);
+            // Remove the file extension from the chapter title.
+            let title_no_ext = remove_file_extension(&raw_title);
+            let info = parse_chapter_info(&title_no_ext, &manga_title);
             let date_updated = node
                 .select("td:nth-child(3)")
                 .text()
                 .as_date("yyyy-MM-dd HH:mm", None, None);
             
             if let Some((start, end)) = info.chapter_range {
-                // If a range is given, create an entry for each chapter number.
                 for ch in (start as i32)..=(end as i32) {
                     chapters.push(Chapter {
                         id: url.clone(),
@@ -362,7 +321,7 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
             } else {
                 chapters.push(Chapter {
                     id: url.clone(),
-                    title: url_decode(&title),
+                    title: url_decode(&title_no_ext),
                     chapter: if info.chapter > 0.0 { info.chapter } else { -1.0 },
                     volume: if info.volume > 0.0 { info.volume } else { -1.0 },
                     date_updated,
@@ -402,7 +361,6 @@ fn get_manga_details(id: String) -> Result<Manga> {
     
     Ok(Manga {
         id: id.clone(),
-        // Use extract_manga_title to derive a clean title from the id.
         title: extract_manga_title(&id),
         author: authors.join(", "),
         cover: cover_url,
