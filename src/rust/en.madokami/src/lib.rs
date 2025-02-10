@@ -139,10 +139,12 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
 fn get_manga_details(id: String) -> Result<Manga> {
     let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get))?.html()?;
     
-    // Add these new metadata extraction
+    // Just get description since we use it
     let description = html.select("div.description").text().read();
-    let alt_titles = html.select("div.alt-titles").text().read();
-    let rating = html.select("div.rating").text().read();
+    
+    // Remove unused variables
+    // let alt_titles = html.select("div.alt-titles").text().read();
+    // let rating = html.select("div.rating").text().read();
     
     Ok(Manga {
         id: id.clone(),

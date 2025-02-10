@@ -90,19 +90,6 @@ pub fn clean_filename(filename: &str) -> String {
     cleaned
 }
 
-/// Helper function to check if a character is likely part of a chapter number.
-pub fn is_chapter_char(c: &char) -> bool {
-    c.is_ascii_digit() || *c == '.' || *c == '-'
-}
-
-/// Helper function to extract just the numeric part from a chapter identifier.
-pub fn extract_numeric_part(text: &str) -> String {
-    text.chars()
-        .skip_while(|c| !c.is_ascii_digit())
-        .take_while(|c| is_chapter_char(c))
-        .collect()
-}
-
 /// Extracts a manga title from the given path by trimming any leading/trailing slashes,
 /// splitting on '/', URL-decoding each segment, and returning the first segment (from the end)
 /// that does not start with '!' and does not contain unwanted markers (like "VIZBIG").
