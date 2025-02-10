@@ -1,7 +1,6 @@
 #![no_std]
 extern crate alloc;
 
-use alloc::string::ToString;
 use aidoku::{
     error::Result,
     prelude::*,
@@ -15,6 +14,14 @@ use aidoku::{
 use base64::{engine::general_purpose, Engine};
 
 const BASE_URL: &str = "https://manga.madokami.al";
+
+/// Helper struct to store parsed chapter info
+#[derive(Default)]
+struct ChapterInfo {
+    chapter: f32,
+    volume: f32,
+    chapter_range: Option<(f32, f32)>,
+}
 
 /// Adds HTTP Basic authentication headers to a request if credentials are available.
 fn add_auth_to_request(request: Request) -> Result<Request> {
@@ -45,6 +52,85 @@ fn extract_manga_title(path: &str) -> String {
         }
     }
     found_title
+}
+
+/// Parses chapter and volume numbers from a filename
+fn parse_chapter_info(filename: &str) -> ChapterInfo {
+    let mut info = ChapterInfo::default();
+    let clean_name = url_decode(filename).to_lowercase();
+
+    // Check for volume first
+    if clean_name.contains('v') && clean_name.contains("digital") {
+        // Match patterns like "v01", "v1", etc.
+        if let Some(vol_idx) = clean_name.find('v') {
+            if let Some(end_idx) = clean_name[vol_idx+1..].find(|c: char| !c.is_ascii_digit()) {
+                if let Ok(vol_num) = clean_name[vol_idx+1..vol_idx+1+end_idx].parse::<f32>() {
+                    info.volume = vol_num;
+                    return info;
+                }
+            }
+        }
+    }
+
+    // Check for chapter ranges (e.g., "c001-007")
+    if clean_name.contains("-") && (clean_name.contains("c") || clean_name.contains("chapter")) {
+        let range_parts: Vec<&str> = clean_name
+            .split(|c| c == '-' || c == ' ')
+            .filter(|s| !s.is_empty())
+            .collect();
+        
+        for (i, part) in range_parts.iter().enumerate() {
+            if let Some(num_str) = part.trim_start_matches(|c: char| !c.is_ascii_digit())
+                .trim_end_matches(|c: char| !c.is_ascii_digit())
+            {
+                if let Ok(num) = num_str.parse::<f32>() {
+                    if i == 0 {
+                        info.chapter = num;
+                    } else if i == 1 && num > info.chapter {
+                        info.chapter_range = Some((info.chapter, num));
+                        break;
+                    }
+                }
+            }
+        }
+        if info.chapter_range.is_some() {
+            return info;
+        }
+    }
+
+    // Check for individual chapter numbers
+    let chapter_indicators = ["chapter", "c", " "];
+    for indicator in chapter_indicators {
+        if let Some(idx) = clean_name.find(indicator) {
+            let after_indicator = &clean_name[idx + indicator.len()..];
+            if let Some(end_idx) = after_indicator.find(|c: char| !c.is_ascii_digit()) {
+                let num_str = &after_indicator[..end_idx];
+                if let Ok(num) = num_str.parse::<f32>() {
+                    info.chapter = num;
+                    return info;
+                }
+            }
+        }
+    }
+
+    // Last resort - look for any numbers that could be chapter numbers
+    for (i, c) in clean_name.char_indices() {
+        if c.is_ascii_digit() {
+            if let Some(end_idx) = clean_name[i..].find(|c: char| !c.is_ascii_digit()) {
+                let num_str = &clean_name[i..i+end_idx];
+                if let Ok(num) = num_str.parse::<f32>() {
+                    // Only use the number if we're confident it's a chapter number
+                    // (e.g., not a year or other metadata)
+                    if num < 2000 {  // Avoid matching years
+                        info.chapter = num;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    info
 }
 
 /// Decodes a URL-encoded string.
@@ -101,23 +187,8 @@ fn url_encode(input: &str) -> String {
     encoded
 }
 
-/// Returns the parent path of the given path, if available.
-fn get_parent_path(path: &str) -> Option<String> {
-    let trimmed = path.trim_end_matches('/');
-    if let Some(index) = trimmed.rfind('/') {
-        if index == 0 {
-            Some(String::from("/"))
-        } else {
-            Some(trimmed[..index].to_string())
-        }
-    } else {
-        None
-    }
-}
-
 #[get_manga_list]
 fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
-    // Build the search query if available.
     let mut query = String::new();
     for filter in filters {
         if let FilterType::Title = filter.kind {
@@ -127,34 +198,37 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
             }
         }
     }
+
     let url = if query.is_empty() {
         format!("{}/recent", BASE_URL)
     } else {
         format!("{}/search?q={}", BASE_URL, query)
     };
+
     let html = add_auth_to_request(Request::new(url, HttpMethod::Get))?.html()?;
+    
+    let mut mangas = Vec::new();
     let selector = if query.is_empty() {
         "table.mobile-files-table tbody tr td:nth-child(1) a:nth-child(1)"
     } else {
         "div.container table tbody tr td:nth-child(1) a:nth-child(1)"
     };
 
-    let mut mangas = Vec::new();
-    // Iterate over manga entries using only the list page's HTML.
     for element in html.select(selector).array() {
         if let Ok(node) = element.as_node() {
             let path = node.attr("href").read();
-            // Skip directory entries.
+            
+            // Skip directory entries and entries starting with !
             if path.ends_with('/') {
                 continue;
             }
+
             let title = extract_manga_title(&path);
-            // Use the <img> tag if available; otherwise, leave the cover empty.
-            let cover = node.select("img").attr("src").read();
+            
             mangas.push(Manga {
                 id: path.clone(),
                 title,
-                cover,
+                cover: String::new(), // Empty cover URL for list view to improve performance
                 url: format!("{}{}", BASE_URL, path),
                 status: MangaStatus::Unknown,
                 viewer: MangaViewer::Rtl,
@@ -162,6 +236,7 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
             });
         }
     }
+
     Ok(MangaPageResult {
         manga: mangas,
         has_more: false,
@@ -170,15 +245,15 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
 
 #[get_manga_details]
 fn get_manga_details(id: String) -> Result<Manga> {
-    // When a manga is selected, load its details page.
+    // When a manga is selected, load its details page
     let mut html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get))?.html()?;
+    
     let mut authors = Vec::new();
     let mut genres = Vec::new();
     let mut status = MangaStatus::Unknown;
-    let mut cover_url = html
-        .select("div.manga-info img[itemprop=\"image\"]")
-        .attr("src")
-        .read();
+    let mut cover_url = html.select("div.manga-info img[itemprop=\"image\"]").attr("src").read();
+
+    // Get metadata from current page
     for author_node in html.select("a[itemprop=\"author\"]").array() {
         if let Ok(node) = author_node.as_node() {
             authors.push(node.text().read());
@@ -192,7 +267,8 @@ fn get_manga_details(id: String) -> Result<Manga> {
     if html.select("span.scanstatus").text().read() == "Yes" {
         status = MangaStatus::Completed;
     }
-    // If key metadata is missing, try the parent directory.
+
+    // If missing metadata, try parent directory
     if authors.is_empty() || genres.is_empty() || cover_url.is_empty() {
         let parts: Vec<&str> = id.split('/').filter(|s| !s.is_empty()).collect();
         if parts.len() > 1 {
@@ -207,17 +283,15 @@ fn get_manga_details(id: String) -> Result<Manga> {
                     parent_parts.push(*part);
                 }
             }
+            
             if !parent_parts.is_empty() {
                 let parent_path = format!("/{}", parent_parts.join("/"));
-                if let Ok(parent_html) = add_auth_to_request(
-                    Request::new(format!("{}{}", BASE_URL, parent_path), HttpMethod::Get)
-                )?.html() {
+                if let Ok(parent_html) = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, parent_path), HttpMethod::Get))?.html() {
                     html = parent_html;
+                    
+                    // Try to get missing metadata from parent
                     if cover_url.is_empty() {
-                        cover_url = html
-                            .select("div.manga-info img[itemprop=\"image\"]")
-                            .attr("src")
-                            .read();
+                        cover_url = html.select("div.manga-info img[itemprop=\"image\"]").attr("src").read();
                     }
                     if authors.is_empty() {
                         for author_node in html.select("a[itemprop=\"author\"]").array() {
@@ -240,6 +314,7 @@ fn get_manga_details(id: String) -> Result<Manga> {
             }
         }
     }
+
     Ok(Manga {
         id: id.clone(),
         title: extract_manga_title(&id),
@@ -257,13 +332,16 @@ fn get_manga_details(id: String) -> Result<Manga> {
 fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
     let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get))?.html()?;
     let mut chapters = Vec::new();
+    
     for row in html.select("table#index-table > tbody > tr").array() {
         if let Ok(node) = row.as_node() {
             let title_node = node.select("td:nth-child(1) a");
             let title = title_node.text().read();
+            
             if title.ends_with('/') || title.starts_with('!') {
                 continue;
             }
+
             let read_link = node.select("td:nth-child(6) a").first();
             let base_url = read_link.attr("href").read();
             let url = if let Some(reader_part) = base_url.split("/reader").last() {
@@ -271,81 +349,25 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
             } else {
                 continue;
             };
-            chapters.push(Chapter {
-                id: url.clone(),
-                title: url_decode(&title),
-                chapter: -1.0,
-                date_updated: node
-                    .select("td:nth-child(3)")
-                    .text()
-                    .as_date("yyyy-MM-dd HH:mm", None, None),
-                url: format!("{}{}", BASE_URL, url),
-                ..Default::default()
-            });
-        }
-    }
-    chapters.reverse();
-    Ok(chapters)
-}
 
-#[get_page_list]
-fn get_page_list(_manga_id: String, chapter_id: String) -> Result<Vec<Page>> {
-    let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, chapter_id), HttpMethod::Get))?.html()?;
-    let reader = html.select("div#reader");
-    let path = reader.attr("data-path").read();
-    let files = reader.attr("data-files").read();
-    let mut pages = Vec::new();
-    if let Ok(file_list) = aidoku::std::json::parse(files.as_bytes()) {
-        if let Ok(array) = file_list.as_array() {
-            for (index, file) in array.enumerate() {
-                if let Ok(filename) = file.as_string() {
-                    pages.push(Page {
-                        index: index as i32,
-                        url: format!(
-                            "{}/reader/image?path={}&file={}",
-                            BASE_URL,
-                            url_encode(&path),
-                            url_encode(&filename.read())
-                        ),
+            let info = parse_chapter_info(&title);
+            let date_updated = node
+                .select("td:nth-child(3)")
+                .text()
+                .as_date("yyyy-MM-dd HH:mm", None, None);
+            
+            // Handle chapter ranges
+            if let Some((start, end)) = info.chapter_range {
+                for chapter_num in (start as i32)..=(end as i32) {
+                    chapters.push(Chapter {
+                        id: url.clone(),
+                        title: format!("Chapter {}", chapter_num),
+                        chapter: chapter_num as f32,
+                        volume: if info.volume > 0.0 { info.volume } else { -1.0 },
+                        date_updated,
+                        url: format!("{}{}", BASE_URL, url),
                         ..Default::default()
                     });
                 }
-            }
-        }
-    }
-    Ok(pages)
-}
-
-#[modify_image_request]
-fn modify_image_request(request: Request) {
-    if let Ok(request_with_auth) = add_auth_to_request(request) {
-        request_with_auth
-            .header("Referer", BASE_URL)
-            .header("Accept", "image/*");
-    }
-}
-
-#[handle_url]
-fn handle_url(url: String) -> Result<DeepLink> {
-    let url = url.replace(BASE_URL, "");
-    if url.starts_with("/reader") {
-        Ok(DeepLink {
-            manga: Some(Manga {
-                id: String::from(url.split("/reader").next().unwrap_or_default()),
-                ..Default::default()
-            }),
-            chapter: Some(Chapter {
-                id: url,
-                ..Default::default()
-            }),
-        })
-    } else {
-        Ok(DeepLink {
-            manga: Some(Manga {
-                id: url,
-                ..Default::default()
-            }),
-            ..Default::default()
-        })
-    }
-}
+            } else {
+                chapters.push(Chapter {
