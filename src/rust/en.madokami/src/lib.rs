@@ -1,6 +1,7 @@
 #![no_std]
 extern crate alloc;
 
+use alloc::string::ToString; // Import the ToString trait for .to_string()
 use aidoku::{
     error::Result,
     prelude::*,
@@ -41,7 +42,7 @@ fn add_auth_to_request(request: Request) -> Result<Request> {
     }
 }
 
-/// URL-decodes a percent–encoded string.
+/// URL-decodes a percent-encoded string.
 fn url_decode(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
     let mut i = 0;
@@ -110,14 +111,9 @@ fn parse_chapter_info(filename: &str) -> ChapterInfo {
     let clean = url_decode(filename).to_lowercase();
 
     // (1) Check for a volume marker.
-    // Look for a space followed by "v" (e.g. " v01"). This should catch filenames like
-    // "Chainsaw Man v01 (2020) …"
     if let Some(pos) = clean.find(" v") {
         let after = &clean[pos + 2..];
-        let vol_str: String = after
-            .chars()
-            .take_while(|c| c.is_ascii_digit() || *c == '.')
-            .collect();
+        let vol_str: String = after.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
         if !vol_str.is_empty() {
             if let Ok(vol) = vol_str.parse::<f32>() {
                 info.volume = vol;
@@ -128,10 +124,9 @@ fn parse_chapter_info(filename: &str) -> ChapterInfo {
     }
 
     // (2) Look for an explicit chapter marker.
-    // First try a marker with a leading dash – for example " - c001-007"
     if let Some(pos) = clean.find(" - c") {
         let chapter_part = &clean[pos + 4..]; // Skip " - c"
-        // Check if a chapter range is indicated by a dash within the chapter part.
+        // Check if a chapter range is indicated by a dash.
         if let Some(dash_pos) = chapter_part.find('-') {
             let start_str: String = chapter_part
                 .chars()
@@ -167,7 +162,6 @@ fn parse_chapter_info(filename: &str) -> ChapterInfo {
     // Alternatively, if an explicit "c" marker is present (even without the preceding " - "),
     // and it isn’t part of a word, try to use it.
     if let Some(pos) = clean.find("c") {
-        // Only consider it if the character immediately before isn’t alphabetic.
         if pos == 0 || !clean.as_bytes()[pos - 1].is_ascii_alphabetic() {
             let after = &clean[pos + 1..];
             let chapter_str: String = after
@@ -224,7 +218,6 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
     let html = add_auth_to_request(Request::new(url, HttpMethod::Get))?.html()?;
     
     let mut mangas = Vec::new();
-    // For performance we leave the cover URL empty.
     let selector = if query.is_empty() {
         "table.mobile-files-table tbody tr td:nth-child(1) a:nth-child(1)"
     } else {
@@ -237,12 +230,12 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
             if path.ends_with('/') {
                 continue;
             }
-            // Here we use the filename (from the URL path) to extract the title.
+            // Convert the last segment into a String.
             let title = path.split('/').last().unwrap_or("").to_string();
             mangas.push(Manga {
                 id: path.clone(),
                 title,
-                cover: String::new(),
+                cover: String::new(), // Empty cover URL for performance
                 url: format!("{}{}", BASE_URL, path),
                 status: MangaStatus::Unknown,
                 viewer: MangaViewer::Rtl,
@@ -257,7 +250,7 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
     })
 }
 
-/// In get_chapter_list we now use the updated parser so that:
+/// In get_chapter_list we use the updated parser so that:
 /// • Filenames like "Chainsaw Man v01 …" yield a volume number (with no chapter number), and
 /// • Filenames like "Chainsaw Man - c001-007 …" or "Chainsaw Man 123 …" are treated as chapters.
 #[get_chapter_list]
@@ -323,7 +316,8 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
 
 #[get_manga_details]
 fn get_manga_details(id: String) -> Result<Manga> {
-    let mut html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get))?.html()?;
+    // Removed unnecessary `mut` since we don't modify html after creation.
+    let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get))?.html()?;
     
     let mut authors = Vec::new();
     let mut genres = Vec::new();
@@ -346,7 +340,7 @@ fn get_manga_details(id: String) -> Result<Manga> {
     
     Ok(Manga {
         id: id.clone(),
-        title: id,
+        title: id.clone(), // Clone id so it isn’t moved
         author: authors.join(", "),
         cover: cover_url,
         categories: genres,
