@@ -15,11 +15,14 @@ use base64::{engine::general_purpose, Engine};
 
 const BASE_URL: &str = "https://manga.madokami.al";
 
-/// Helper struct to store parsed chapter info
+/// Helper struct to store parsed chapter info.
 #[derive(Default)]
 struct ChapterInfo {
+    /// If this file is a chapter, this will be the chapter number.
     chapter: f32,
+    /// If this file is a volume, this will be its volume number.
     volume: f32,
+    /// If the filename indicates a range (for example “c001-007”), this holds the start and end.
     chapter_range: Option<(f32, f32)>,
 }
 
@@ -38,176 +41,7 @@ fn add_auth_to_request(request: Request) -> Result<Request> {
     }
 }
 
-/// Extracts a manga title from the given path by iterating backwards through path segments.
-fn extract_manga_title(path: &str) -> String {
-    let parts: Vec<&str> = path.split('/').collect();
-    
-    // Work backwards through path segments to find main title
-    for part in parts.iter().rev() {
-        if !part.is_empty() {
-            let decoded = url_decode(part);
-            // If it's not VIZBIG and not starting with !, it's the title
-            if !decoded.contains("VIZBIG") && !decoded.starts_with('!') {
-                return decoded;
-            }
-        }
-    }
-    String::new()
-}
-
-fn get_parent_path(path: &str) -> Option<String> {
-    let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-    let mut parent_parts = Vec::new();
-    
-    // Build parent path stopping before VIZBIG or ! prefixed directories
-    for part in parts {
-        let decoded = url_decode(part);
-        if !decoded.contains("VIZBIG") && !decoded.starts_with('!') {
-            parent_parts.push(part);
-        } else {
-            break;
-        }
-    }
-
-    if !parent_parts.is_empty() {
-        Some(format!("/{}", parent_parts.join("/")))
-    } else {
-        None
-    }
-}
-
-/// Parses chapter and volume numbers from a filename
-fn parse_chapter_info(filename: &str) -> ChapterInfo {
-    let mut info = ChapterInfo::default();
-    let clean_name = url_decode(filename).to_lowercase();
-
-    // Check for volumes first - expanded volume checking
-    if let Some(vol_num) = extract_volume_number(&clean_name) {
-        info.volume = vol_num;
-        return info;
-    }
-
-    // Skip known patterns that could interfere with number parsing
-    let ignored_patterns = ["(c2c)", "v2", "100%"];
-    for pattern in ignored_patterns {
-        if clean_name.contains(pattern) {
-            // If title contains one of these patterns, only try to get explicit chapter numbers
-            if let Some(num) = extract_explicit_chapter_number(&clean_name) {
-                info.chapter = num;
-            }
-            return info;
-        }
-    }
-
-    // Check for explicit chapter numbers
-    if let Some(num) = extract_explicit_chapter_number(&clean_name) {
-        info.chapter = num;
-        return info;
-    }
-
-    // Handle chapter ranges
-    if clean_name.contains("-") && (clean_name.contains("c") || clean_name.contains("chapter")) {
-        let range_parts: Vec<&str> = clean_name
-            .split(|c| c == '-' || c == ' ')
-            .filter(|s| !s.is_empty())
-            .collect();
-        
-        for (i, part) in range_parts.iter().enumerate() {
-            let num_str = part.trim_start_matches(|c: char| !c.is_ascii_digit())
-                            .trim_end_matches(|c: char| !c.is_ascii_digit());
-            
-            if !num_str.is_empty() {
-                if let Ok(num) = num_str.parse::<f32>() {
-                    if i == 0 {
-                        info.chapter = num;
-                    } else if i == 1 && num > info.chapter {
-                        info.chapter_range = Some((info.chapter, num));
-                        break;
-                    }
-                }
-            }
-        }
-        if info.chapter_range.is_some() {
-            return info;
-        }
-    }
-
-    info
-}
-
-/// Helper function to extract volume numbers
-fn extract_volume_number(name: &str) -> Option<f32> {
-    // Common volume markers and their positions
-    let volume_markers = [" v", "v.", "v", "vol", "volume"];
-    
-    for marker in volume_markers {
-        if let Some(idx) = name.find(marker) {
-            // Make sure it's not "viz" or similar
-            if idx > 0 && name[..idx].chars().last().unwrap().is_alphabetic() {
-                continue;
-            }
-
-            let after_marker = &name[idx + marker.len()..];
-            let num_str: String = after_marker
-                .chars()
-                .take_while(|c| c.is_ascii_digit() || *c == '.')
-                .collect();
-                
-            if !num_str.is_empty() {
-                if let Ok(num) = num_str.parse::<f32>() {
-                    // Only return if it looks like a valid volume number
-                    if num > 0.0 && num < 100.0 {
-                        return Some(num);
-                    }
-                }
-            }
-        }
-    }
-
-    None
-}
-
-/// Helper function to extract explicit chapter numbers
-fn extract_explicit_chapter_number(name: &str) -> Option<f32> {
-    // Try explicit chapter markers first
-    let chapter_markers = [" ch", "ch.", "ch ", "chapter", " c", "c."];
-    for marker in chapter_markers {
-        if let Some(idx) = name.find(marker) {
-            let after_marker = &name[idx + marker.len()..];
-            let num_str: String = after_marker
-                .chars()
-                .take_while(|c| c.is_ascii_digit() || *c == '.')
-                .collect();
-            if !num_str.is_empty() {
-                if let Ok(num) = num_str.parse::<f32>() {
-                    return Some(num);
-                }
-            }
-        }
-    }
-
-    // Check for chapter number at the end of the name
-    let end_numbers: String = name
-        .chars()
-        .rev()
-        .take_while(|c| c.is_ascii_digit())
-        .collect::<String>()
-        .chars()
-        .rev()
-        .collect();
-    
-    if !end_numbers.is_empty() {
-        if let Ok(num) = end_numbers.parse::<f32>() {
-            if num < 2000.0 {  // Avoid matching years
-                return Some(num);
-            }
-        }
-    }
-
-    None
-}
-
-/// Decodes a URL-encoded string.
+/// URL-decodes a percent–encoded string.
 fn url_decode(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
     let mut i = 0;
@@ -226,7 +60,7 @@ fn url_decode(input: &str) -> String {
     result
 }
 
-/// Converts a hexadecimal character into its numerical value.
+/// Returns the numerical value of a hexadecimal digit.
 fn hex_val(b: u8) -> Option<u8> {
     match b {
         b'0'..=b'9' => Some(b - b'0'),
@@ -261,6 +95,114 @@ fn url_encode(input: &str) -> String {
     encoded
 }
 
+/// Revised chapter/volume parser.
+///
+/// This function uses several heuristics:
+/// 1. If the filename contains a volume marker – for example a space followed by "v" and digits
+///    (as in "Chainsaw Man v01 …") – then we treat the file as a volume.
+/// 2. Else, if the filename contains an explicit chapter marker (for example " - c") then we
+///    extract the chapter number. If a dash (“-”) is found after the marker (e.g. "c001-007")
+///    we treat this as a chapter range.
+/// 3. Otherwise we fall back to extracting trailing digits as the chapter number.
+fn parse_chapter_info(filename: &str) -> ChapterInfo {
+    let mut info = ChapterInfo::default();
+    // Use a URL-decoded, lowercase version for matching.
+    let clean = url_decode(filename).to_lowercase();
+
+    // (1) Check for a volume marker.
+    // Look for a space followed by "v" (e.g. " v01"). This should catch filenames like
+    // "Chainsaw Man v01 (2020) …"
+    if let Some(pos) = clean.find(" v") {
+        let after = &clean[pos + 2..];
+        let vol_str: String = after
+            .chars()
+            .take_while(|c| c.is_ascii_digit() || *c == '.')
+            .collect();
+        if !vol_str.is_empty() {
+            if let Ok(vol) = vol_str.parse::<f32>() {
+                info.volume = vol;
+                // If a volume is found, ignore any chapter data.
+                return info;
+            }
+        }
+    }
+
+    // (2) Look for an explicit chapter marker.
+    // First try a marker with a leading dash – for example " - c001-007"
+    if let Some(pos) = clean.find(" - c") {
+        let chapter_part = &clean[pos + 4..]; // Skip " - c"
+        // Check if a chapter range is indicated by a dash within the chapter part.
+        if let Some(dash_pos) = chapter_part.find('-') {
+            let start_str: String = chapter_part
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
+            let end_sub = &chapter_part[dash_pos + 1..];
+            let end_str: String = end_sub
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
+            if !start_str.is_empty() && !end_str.is_empty() {
+                if let (Ok(start), Ok(end)) = (start_str.parse::<f32>(), end_str.parse::<f32>()) {
+                    info.chapter = start;
+                    info.chapter_range = Some((start, end));
+                    return info;
+                }
+            }
+        } else {
+            // Single chapter indicated.
+            let chapter_str: String = chapter_part
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
+            if !chapter_str.is_empty() {
+                if let Ok(ch) = chapter_str.parse::<f32>() {
+                    info.chapter = ch;
+                    return info;
+                }
+            }
+        }
+    }
+
+    // Alternatively, if an explicit "c" marker is present (even without the preceding " - "),
+    // and it isn’t part of a word, try to use it.
+    if let Some(pos) = clean.find("c") {
+        // Only consider it if the character immediately before isn’t alphabetic.
+        if pos == 0 || !clean.as_bytes()[pos - 1].is_ascii_alphabetic() {
+            let after = &clean[pos + 1..];
+            let chapter_str: String = after
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
+            if !chapter_str.is_empty() {
+                if let Ok(ch) = chapter_str.parse::<f32>() {
+                    info.chapter = ch;
+                    return info;
+                }
+            }
+        }
+    }
+
+    // (3) Fallback: extract trailing digits as the chapter number.
+    let trailing: String = clean
+        .chars()
+        .rev()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
+    if !trailing.is_empty() {
+        if let Ok(ch) = trailing.parse::<f32>() {
+            info.chapter = ch;
+            return info;
+        }
+    }
+
+    info
+}
+
+/// get_manga_list no longer fetches covers (due to Aidoku limitations), so only minimal data is provided.
 #[get_manga_list]
 fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
     let mut query = String::new();
@@ -282,6 +224,7 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
     let html = add_auth_to_request(Request::new(url, HttpMethod::Get))?.html()?;
     
     let mut mangas = Vec::new();
+    // For performance we leave the cover URL empty.
     let selector = if query.is_empty() {
         "table.mobile-files-table tbody tr td:nth-child(1) a:nth-child(1)"
     } else {
@@ -291,18 +234,15 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
     for element in html.select(selector).array() {
         if let Ok(node) = element.as_node() {
             let path = node.attr("href").read();
-            
-            // Skip directory entries and entries starting with !
             if path.ends_with('/') {
                 continue;
             }
-
-            let title = extract_manga_title(&path);
-            
+            // Here we use the filename (from the URL path) to extract the title.
+            let title = path.split('/').last().unwrap_or("").to_string();
             mangas.push(Manga {
                 id: path.clone(),
                 title,
-                cover: String::new(), // Empty cover URL for list view to improve performance
+                cover: String::new(),
                 url: format!("{}{}", BASE_URL, path),
                 status: MangaStatus::Unknown,
                 viewer: MangaViewer::Rtl,
@@ -317,74 +257,9 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
     })
 }
 
-#[get_manga_details]
-fn get_manga_details(id: String) -> Result<Manga> {
-    let mut html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get))?.html()?;
-    
-    let mut authors = Vec::new();
-    let mut genres = Vec::new();
-    let mut status = MangaStatus::Unknown;
-    let mut cover_url = html.select("div.manga-info img[itemprop=\"image\"]").attr("src").read();
-
-    // Get metadata from current page
-    for author_node in html.select("a[itemprop=\"author\"]").array() {
-        if let Ok(node) = author_node.as_node() {
-            authors.push(node.text().read());
-        }
-    }
-    for genre_node in html.select("div.genres a.tag").array() {
-        if let Ok(node) = genre_node.as_node() {
-            genres.push(node.text().read());
-        }
-    }
-    if html.select("span.scanstatus").text().read() == "Yes" {
-        status = MangaStatus::Completed;
-    }
-
-    // If missing metadata, try parent directory
-    if authors.is_empty() || genres.is_empty() || cover_url.is_empty() {
-        if let Some(parent_path) = get_parent_path(&id) {
-            if let Ok(parent_html) = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, parent_path), HttpMethod::Get))?.html() {
-                html = parent_html;
-                    
-                // Try to get missing metadata from parent
-                if cover_url.is_empty() {
-                    cover_url = html.select("div.manga-info img[itemprop=\"image\"]").attr("src").read();
-                }
-                if authors.is_empty() {
-                    for author_node in html.select("a[itemprop=\"author\"]").array() {
-                        if let Ok(node) = author_node.as_node() {
-                            authors.push(node.text().read());
-                        }
-                    }
-                }
-                if genres.is_empty() {
-                    for genre_node in html.select("div.genres a.tag").array() {
-                        if let Ok(node) = genre_node.as_node() {
-                            genres.push(node.text().read());
-                        }
-                    }
-                }
-                if status == MangaStatus::Unknown && html.select("span.scanstatus").text().read() == "Yes" {
-                    status = MangaStatus::Completed;
-                }
-            }
-        }
-    }
-
-    Ok(Manga {
-        id: id.clone(),
-        title: extract_manga_title(&id),
-        author: authors.join(", "),
-        cover: cover_url,
-        categories: genres,
-        status,
-        url: format!("{}{}", BASE_URL, id),
-        viewer: MangaViewer::Rtl,
-        ..Default::default()
-    })
-}
-
+/// In get_chapter_list we now use the updated parser so that:
+/// • Filenames like "Chainsaw Man v01 …" yield a volume number (with no chapter number), and
+/// • Filenames like "Chainsaw Man - c001-007 …" or "Chainsaw Man 123 …" are treated as chapters.
 #[get_chapter_list]
 fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
     let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get))?.html()?;
@@ -395,6 +270,7 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
             let title_node = node.select("td:nth-child(1) a");
             let title = title_node.text().read();
             
+            // Skip entries that are directories or start with '!'
             if title.ends_with('/') || title.starts_with('!') {
                 continue;
             }
@@ -407,19 +283,20 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
                 continue;
             };
 
+            // Parse the chapter/volume information from the filename.
             let info = parse_chapter_info(&title);
             let date_updated = node
                 .select("td:nth-child(3)")
                 .text()
                 .as_date("yyyy-MM-dd HH:mm", None, None);
             
-            // Handle chapter ranges
             if let Some((start, end)) = info.chapter_range {
-                for chapter_num in (start as i32)..=(end as i32) {
+                // If a range is given, create an entry for each chapter number.
+                for ch in (start as i32)..=(end as i32) {
                     chapters.push(Chapter {
                         id: url.clone(),
-                        title: format!("Chapter {}", chapter_num),
-                        chapter: chapter_num as f32,
+                        title: format!("Chapter {}", ch),
+                        chapter: ch as f32,
                         volume: if info.volume > 0.0 { info.volume } else { -1.0 },
                         date_updated,
                         url: format!("{}{}", BASE_URL, url),
@@ -442,6 +319,42 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
 
     chapters.reverse();
     Ok(chapters)
+}
+
+#[get_manga_details]
+fn get_manga_details(id: String) -> Result<Manga> {
+    let mut html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get))?.html()?;
+    
+    let mut authors = Vec::new();
+    let mut genres = Vec::new();
+    let mut status = MangaStatus::Unknown;
+    let cover_url = html.select("div.manga-info img[itemprop=\"image\"]").attr("src").read();
+
+    for author_node in html.select("a[itemprop=\"author\"]").array() {
+        if let Ok(node) = author_node.as_node() {
+            authors.push(node.text().read());
+        }
+    }
+    for genre_node in html.select("div.genres a.tag").array() {
+        if let Ok(node) = genre_node.as_node() {
+            genres.push(node.text().read());
+        }
+    }
+    if html.select("span.scanstatus").text().read() == "Yes" {
+        status = MangaStatus::Completed;
+    }
+    
+    Ok(Manga {
+        id: id.clone(),
+        title: id,
+        author: authors.join(", "),
+        cover: cover_url,
+        categories: genres,
+        status,
+        url: format!("{}{}", BASE_URL, id),
+        viewer: MangaViewer::Rtl,
+        ..Default::default()
+    })
 }
 
 #[get_page_list]
