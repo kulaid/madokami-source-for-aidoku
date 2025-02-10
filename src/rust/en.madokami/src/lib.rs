@@ -181,22 +181,6 @@ fn extract_explicit_chapter_number(name: &str) -> Option<f32> {
             }
         }
     }
-    // Last resort - look for any numbers that could be chapter numbers
-    for (i, c) in clean_name.char_indices() {
-        if c.is_ascii_digit() {
-            if let Some(end_idx) = clean_name[i..].find(|c: char| !c.is_ascii_digit()) {
-                let num_str = &clean_name[i..i+end_idx];
-                if let Ok(num) = num_str.parse::<f32>() {
-                    // Only use the number if we're confident it's a chapter number
-                    // (e.g., not a year or other metadata)
-                    if num < 2000.0 {  // Avoid matching years
-                        info.chapter = num;
-                        break;
-                    }
-                }
-            }
-        }
-    }
 
     None
 }
