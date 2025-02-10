@@ -59,6 +59,12 @@ fn parse_chapter_info(filename: &str) -> ChapterInfo {
     let mut info = ChapterInfo::default();
     let clean_name = url_decode(filename).to_lowercase();
 
+    // Check for volumes first - expanded volume checking
+    if let Some(vol_num) = extract_volume_number(&clean_name) {
+        info.volume = vol_num;
+        return info;
+    }
+
     // Skip known patterns that could interfere with number parsing
     let ignored_patterns = ["(c2c)", "v2", "100%"];
     for pattern in ignored_patterns {
@@ -71,26 +77,13 @@ fn parse_chapter_info(filename: &str) -> ChapterInfo {
         }
     }
 
-    // Check for volume first
-    if clean_name.contains('v') && clean_name.contains("digital") {
-        // Match patterns like "v01", "v1", etc.
-        if let Some(vol_idx) = clean_name.find('v') {
-            if let Some(end_idx) = clean_name[vol_idx+1..].find(|c: char| !c.is_ascii_digit()) {
-                if let Ok(vol_num) = clean_name[vol_idx+1..vol_idx+1+end_idx].parse::<f32>() {
-                    info.volume = vol_num;
-                    return info;
-                }
-            }
-        }
-    }
-
-    // Check for explicit chapter numbers first
+    // Check for explicit chapter numbers
     if let Some(num) = extract_explicit_chapter_number(&clean_name) {
         info.chapter = num;
         return info;
     }
 
-    // If no explicit chapter number found, try to handle ranges and other formats
+    // Handle chapter ranges
     if clean_name.contains("-") && (clean_name.contains("c") || clean_name.contains("chapter")) {
         let range_parts: Vec<&str> = clean_name
             .split(|c| c == '-' || c == ' ')
@@ -118,6 +111,38 @@ fn parse_chapter_info(filename: &str) -> ChapterInfo {
     }
 
     info
+}
+
+/// Helper function to extract volume numbers
+fn extract_volume_number(name: &str) -> Option<f32> {
+    // Common volume markers and their positions
+    let volume_markers = [" v", "v.", "v", "vol", "volume"];
+    
+    for marker in volume_markers {
+        if let Some(idx) = name.find(marker) {
+            // Make sure it's not "viz" or similar
+            if idx > 0 && name[..idx].chars().last().unwrap().is_alphabetic() {
+                continue;
+            }
+
+            let after_marker = &name[idx + marker.len()..];
+            let num_str: String = after_marker
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
+                
+            if !num_str.is_empty() {
+                if let Ok(num) = num_str.parse::<f32>() {
+                    // Only return if it looks like a valid volume number
+                    if num > 0.0 && num < 100.0 {
+                        return Some(num);
+                    }
+                }
+            }
+        }
+    }
+
+    None
 }
 
 /// Helper function to extract explicit chapter numbers
