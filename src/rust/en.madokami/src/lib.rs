@@ -297,7 +297,6 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
 
 #[get_manga_details]
 fn get_manga_details(id: String) -> Result<Manga> {
-    // When a manga is selected, load its details page
     let mut html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get))?.html()?;
     
     let mut authors = Vec::new();
@@ -305,7 +304,7 @@ fn get_manga_details(id: String) -> Result<Manga> {
     let mut status = MangaStatus::Unknown;
     let mut cover_url = html.select("div.manga-info img[itemprop=\"image\"]").attr("src").read();
 
-    // Get metadata from current page
+    // Try to get metadata from current page
     for author_node in html.select("a[itemprop=\"author\"]").array() {
         if let Ok(node) = author_node.as_node() {
             authors.push(node.text().read());
@@ -320,25 +319,40 @@ fn get_manga_details(id: String) -> Result<Manga> {
         status = MangaStatus::Completed;
     }
 
-    // If missing metadata, try parent directory
+    // If missing metadata, try parent directory with improved logic
     if authors.is_empty() || genres.is_empty() || cover_url.is_empty() {
+        // Split path into parts and filter empty segments
         let parts: Vec<&str> = id.split('/').filter(|s| !s.is_empty()).collect();
+        
         if parts.len() > 1 {
+            // Known edition/format keywords that should be treated like !-prefixed directories
+            let format_keywords = ["digital", "vizbig", "omnibus", "perfect", "deluxe", "singles", "volumes"];
+            
+            // Find the main series directory by working backwards
             let mut parent_parts = Vec::new();
-            let mut found_parent = false;
-            for part in parts.iter() {
-                let decoded = url_decode(part);
-                if !decoded.starts_with('!') {
+            let mut found_main_dir = false;
+            
+            for (i, part) in parts.iter().enumerate() {
+                let decoded = url_decode(part).to_lowercase();
+                
+                // Check if this is a format directory (either by ! prefix or known keyword)
+                let is_format_dir = decoded.starts_with('!') || 
+                                  format_keywords.iter().any(|keyword| decoded.contains(keyword));
+                
+                if !is_format_dir && decoded.len() > 3 {
                     parent_parts.push(*part);
-                    found_parent = true;
-                } else if !found_parent {
+                    found_main_dir = true;
+                } else if !found_main_dir {
                     parent_parts.push(*part);
                 }
             }
-            
+
             if !parent_parts.is_empty() {
                 let parent_path = format!("/{}", parent_parts.join("/"));
-                if let Ok(parent_html) = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, parent_path), HttpMethod::Get))?.html() {
+                if let Ok(parent_html) = add_auth_to_request(
+                    Request::new(format!("{}{}", BASE_URL, parent_path), HttpMethod::Get)
+                )?.html() {
+                    // Update html reference to use parent page
                     html = parent_html;
                     
                     // Try to get missing metadata from parent
