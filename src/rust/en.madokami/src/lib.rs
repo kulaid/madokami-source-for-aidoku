@@ -41,17 +41,39 @@ fn add_auth_to_request(request: Request) -> Result<Request> {
 /// Extracts a manga title from the given path by iterating backwards through path segments.
 fn extract_manga_title(path: &str) -> String {
     let parts: Vec<&str> = path.split('/').collect();
-    let mut found_title = String::new();
+    
+    // Work backwards through path segments to find main title
     for part in parts.iter().rev() {
         if !part.is_empty() {
             let decoded = url_decode(part);
-            found_title = decoded.clone();
-            if !decoded.starts_with('!') {
-                return found_title;
+            // If it's not VIZBIG and not starting with !, it's the title
+            if !decoded.contains("VIZBIG") && !decoded.starts_with('!') {
+                return decoded;
             }
         }
     }
-    found_title
+    String::new()
+}
+
+fn get_parent_path(path: &str) -> Option<String> {
+    let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    let mut parent_parts = Vec::new();
+    
+    // Build parent path stopping before VIZBIG or ! prefixed directories
+    for part in parts {
+        let decoded = url_decode(part);
+        if !decoded.contains("VIZBIG") && !decoded.starts_with('!') {
+            parent_parts.push(part);
+        } else {
+            break;
+        }
+    }
+
+    if !parent_parts.is_empty() {
+        Some(format!("/{}", parent_parts.join("/")))
+    } else {
+        None
+    }
 }
 
 /// Parses chapter and volume numbers from a filename
@@ -304,7 +326,7 @@ fn get_manga_details(id: String) -> Result<Manga> {
     let mut status = MangaStatus::Unknown;
     let mut cover_url = html.select("div.manga-info img[itemprop=\"image\"]").attr("src").read();
 
-    // Try to get metadata from current page
+    // Get metadata from current page
     for author_node in html.select("a[itemprop=\"author\"]").array() {
         if let Ok(node) = author_node.as_node() {
             authors.push(node.text().read());
@@ -319,63 +341,32 @@ fn get_manga_details(id: String) -> Result<Manga> {
         status = MangaStatus::Completed;
     }
 
-    // If missing metadata, try parent directory with improved logic
+    // If missing metadata, try parent directory
     if authors.is_empty() || genres.is_empty() || cover_url.is_empty() {
-        // Split path into parts and filter empty segments
-        let parts: Vec<&str> = id.split('/').filter(|s| !s.is_empty()).collect();
-        
-        if parts.len() > 1 {
-            // Known edition/format keywords that should be treated like !-prefixed directories
-            let format_keywords = ["digital", "vizbig", "omnibus", "perfect", "deluxe", "singles", "volumes"];
-            
-            // Find the main series directory by working backwards
-            let mut parent_parts = Vec::new();
-            let mut found_main_dir = false;
-            
-            for (i, part) in parts.iter().enumerate() {
-                let decoded = url_decode(part).to_lowercase();
-                
-                // Check if this is a format directory (either by ! prefix or known keyword)
-                let is_format_dir = decoded.starts_with('!') || 
-                                  format_keywords.iter().any(|keyword| decoded.contains(keyword));
-                
-                if !is_format_dir && decoded.len() > 3 {
-                    parent_parts.push(*part);
-                    found_main_dir = true;
-                } else if !found_main_dir {
-                    parent_parts.push(*part);
-                }
-            }
-
-            if !parent_parts.is_empty() {
-                let parent_path = format!("/{}", parent_parts.join("/"));
-                if let Ok(parent_html) = add_auth_to_request(
-                    Request::new(format!("{}{}", BASE_URL, parent_path), HttpMethod::Get)
-                )?.html() {
-                    // Update html reference to use parent page
-                    html = parent_html;
+        if let Some(parent_path) = get_parent_path(&id) {
+            if let Ok(parent_html) = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, parent_path), HttpMethod::Get))?.html() {
+                html = parent_html;
                     
-                    // Try to get missing metadata from parent
-                    if cover_url.is_empty() {
-                        cover_url = html.select("div.manga-info img[itemprop=\"image\"]").attr("src").read();
-                    }
-                    if authors.is_empty() {
-                        for author_node in html.select("a[itemprop=\"author\"]").array() {
-                            if let Ok(node) = author_node.as_node() {
-                                authors.push(node.text().read());
-                            }
+                // Try to get missing metadata from parent
+                if cover_url.is_empty() {
+                    cover_url = html.select("div.manga-info img[itemprop=\"image\"]").attr("src").read();
+                }
+                if authors.is_empty() {
+                    for author_node in html.select("a[itemprop=\"author\"]").array() {
+                        if let Ok(node) = author_node.as_node() {
+                            authors.push(node.text().read());
                         }
                     }
-                    if genres.is_empty() {
-                        for genre_node in html.select("div.genres a.tag").array() {
-                            if let Ok(node) = genre_node.as_node() {
-                                genres.push(node.text().read());
-                            }
+                }
+                if genres.is_empty() {
+                    for genre_node in html.select("div.genres a.tag").array() {
+                        if let Ok(node) = genre_node.as_node() {
+                            genres.push(node.text().read());
                         }
                     }
-                    if status == MangaStatus::Unknown && html.select("span.scanstatus").text().read() == "Yes" {
-                        status = MangaStatus::Completed;
-                    }
+                }
+                if status == MangaStatus::Unknown && html.select("span.scanstatus").text().read() == "Yes" {
+                    status = MangaStatus::Completed;
                 }
             }
         }
