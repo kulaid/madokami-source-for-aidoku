@@ -1,7 +1,16 @@
-use aidoku::{
-    std::String,
-};
-use alloc::{string::ToString, vec::Vec};
+use aidoku::std::String;
+use alloc::{string::ToString, vec::Vec, format};
+
+/// Public struct to store parsed chapter info.
+#[derive(Default)]
+pub struct ChapterInfo {
+    /// If this file is a chapter, this will be the chapter number.
+    pub chapter: f32,
+    /// If this file is a volume, this will be its volume number.
+    pub volume: f32,
+    /// If the filename indicates a range (for example "c001-007"), this holds the start and end.
+    pub chapter_range: Option<(f32, f32)>,
+}
 
 /// URL-decodes a percent-encoded string.
 pub fn url_decode(input: &str) -> String {
@@ -50,7 +59,7 @@ pub fn url_encode(input: &str) -> String {
                 encoded.push(byte as char);
             }
             _ => {
-                encoded.push_str(&alloc::format!("%{:02X}", byte));
+                encoded.push_str(&format!("%{:02X}", byte));
             }
         }
     }
@@ -116,9 +125,8 @@ pub fn get_parent_path(path: &str) -> Option<String> {
 }
 
 /// Parses chapter/volume information from a filename given the manga title.
-/// (See your previous logic for details.)
-pub fn parse_chapter_info(filename: &str, manga_title: &str) -> super::helper::ChapterInfo {
-    let mut info = super::helper::ChapterInfo::default();
+pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
+    let mut info = ChapterInfo::default();
     let clean_name = url_decode(filename).to_lowercase();
     let clean_name = clean_filename(&clean_name);
     let clean_manga = manga_title.to_lowercase();
@@ -191,7 +199,7 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> super::helper::C
         }
     }
 
-    // (4) Fallback: scan for a group of digits after a non-alphanumeric delimiter.
+    // (4) Fallback: scan for a group of digits that appears after a non-alphanumeric delimiter.
     let chars: Vec<char> = clean_name.chars().collect();
     for i in 0..chars.len() {
         if chars[i].is_ascii_digit() {

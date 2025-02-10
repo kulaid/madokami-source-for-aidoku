@@ -82,8 +82,9 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
 #[get_chapter_list]
 fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
     let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get))?.html()?;
-    let manga_title = extract_manga_title(&id);
     let mut chapters = Vec::new();
+    // Extract the manga title from the id.
+    let manga_title = extract_manga_title(&id);
     
     for row in html.select("table#index-table > tbody > tr").array() {
         if let Ok(node) = row.as_node() {
@@ -137,7 +138,7 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
 
 #[get_manga_details]
 fn get_manga_details(id: String) -> Result<Manga> {
-    let mut html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get))?.html()?;
+    let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get))?.html()?;
     
     // Get metadata from the current page.
     let mut authors: Vec<String> = html.select("a[itemprop=\"author\"]")
@@ -183,7 +184,6 @@ fn get_manga_details(id: String) -> Result<Manga> {
     
     Ok(Manga {
         id: id.clone(),
-        // Use extract_manga_title to derive a clean title from the id.
         title: extract_manga_title(&id),
         author: authors.join(", "),
         cover: cover_url,
