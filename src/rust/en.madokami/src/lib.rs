@@ -139,13 +139,6 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
 fn get_manga_details(id: String) -> Result<Manga> {
     let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get))?.html()?;
     
-    // Just get description since we use it
-    let description = html.select("div.description").text().read();
-    
-    // Remove unused variables
-    // let alt_titles = html.select("div.alt-titles").text().read();
-    // let rating = html.select("div.rating").text().read();
-    
     Ok(Manga {
         id: id.clone(),
         title: extract_manga_title(&id),
@@ -154,17 +147,12 @@ fn get_manga_details(id: String) -> Result<Manga> {
                    .map(|n| n.as_node().unwrap().text().read())
                    .collect::<Vec<_>>()
                    .join(", "),
-        description,
         cover: html.select("div.manga-info img[itemprop=\"image\"]").attr("src").read(),
         categories: html.select("div.genres a.tag")
                        .array()
                        .map(|n| n.as_node().unwrap().text().read())
                        .collect(),
-        status: if html.select("span.scanstatus").text().read() == "Yes" {
-            MangaStatus::Completed
-        } else {
-            MangaStatus::Unknown
-        },
+        status: MangaStatus::Unknown,
         url: format!("{}{}", BASE_URL, id),
         viewer: MangaViewer::Rtl,
         ..Default::default()
