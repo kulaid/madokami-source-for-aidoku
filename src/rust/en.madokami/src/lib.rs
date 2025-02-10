@@ -371,3 +371,82 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
                 }
             } else {
                 chapters.push(Chapter {
+                    id: url.clone(),
+                    title: url_decode(&title),
+                    chapter: if info.chapter > 0.0 { info.chapter } else { -1.0 },
+                    volume: if info.volume > 0.0 { info.volume } else { -1.0 },
+                    date_updated,
+                    url: format!("{}{}", BASE_URL, url),
+                    ..Default::default()
+                });
+            }
+        }
+    }
+
+    chapters.reverse();
+    Ok(chapters)
+}
+
+#[get_page_list]
+fn get_page_list(_manga_id: String, chapter_id: String) -> Result<Vec<Page>> {
+    let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, chapter_id), HttpMethod::Get))?.html()?;
+    let reader = html.select("div#reader");
+    let path = reader.attr("data-path").read();
+    let files = reader.attr("data-files").read();
+    
+    let mut pages = Vec::new();
+    if let Ok(file_list) = aidoku::std::json::parse(files.as_bytes()) {
+        if let Ok(array) = file_list.as_array() {
+            for (index, file) in array.enumerate() {
+                if let Ok(filename) = file.as_string() {
+                    pages.push(Page {
+                        index: index as i32,
+                        url: format!(
+                            "{}/reader/image?path={}&file={}",
+                            BASE_URL,
+                            url_encode(&path),
+                            url_encode(&filename.read())
+                        ),
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+    }
+    
+    Ok(pages)
+}
+
+#[modify_image_request]
+fn modify_image_request(request: Request) {
+    if let Ok(request_with_auth) = add_auth_to_request(request) {
+        request_with_auth
+            .header("Referer", BASE_URL)
+            .header("Accept", "image/*");
+    }
+}
+
+#[handle_url]
+fn handle_url(url: String) -> Result<DeepLink> {
+    let url = url.replace(BASE_URL, "");
+    if url.starts_with("/reader") {
+        Ok(DeepLink {
+            manga: Some(Manga {
+                id: String::from(url.split("/reader").next().unwrap_or_default()),
+                ..Default::default()
+            }),
+            chapter: Some(Chapter {
+                id: url,
+                ..Default::default()
+            }),
+        })
+    } else {
+        Ok(DeepLink {
+            manga: Some(Manga {
+                id: url,
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+    }
+}
