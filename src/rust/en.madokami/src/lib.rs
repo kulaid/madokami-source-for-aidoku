@@ -55,10 +55,21 @@ fn extract_manga_title(path: &str) -> String {
 }
 
 /// Parses chapter and volume numbers from a filename
-/// Parses chapter and volume numbers from a filename
 fn parse_chapter_info(filename: &str) -> ChapterInfo {
     let mut info = ChapterInfo::default();
     let clean_name = url_decode(filename).to_lowercase();
+
+    // Skip known patterns that could interfere with number parsing
+    let ignored_patterns = ["(c2c)", "v2", "100%"];
+    for pattern in ignored_patterns {
+        if clean_name.contains(pattern) {
+            // If title contains one of these patterns, only try to get explicit chapter numbers
+            if let Some(num) = extract_explicit_chapter_number(&clean_name) {
+                info.chapter = num;
+            }
+            return info;
+        }
+    }
 
     // Check for volume first
     if clean_name.contains('v') && clean_name.contains("digital") {
@@ -73,7 +84,13 @@ fn parse_chapter_info(filename: &str) -> ChapterInfo {
         }
     }
 
-    // Check for chapter ranges (e.g., "c001-007")
+    // Check for explicit chapter numbers first
+    if let Some(num) = extract_explicit_chapter_number(&clean_name) {
+        info.chapter = num;
+        return info;
+    }
+
+    // If no explicit chapter number found, try to handle ranges and other formats
     if clean_name.contains("-") && (clean_name.contains("c") || clean_name.contains("chapter")) {
         let range_parts: Vec<&str> = clean_name
             .split(|c| c == '-' || c == ' ')
@@ -100,39 +117,47 @@ fn parse_chapter_info(filename: &str) -> ChapterInfo {
         }
     }
 
-    // Check for individual chapter numbers
-    let chapter_indicators = ["chapter", "c", " "];
-    for indicator in chapter_indicators {
-        if let Some(idx) = clean_name.find(indicator) {
-            let after_indicator = &clean_name[idx + indicator.len()..];
-            if let Some(end_idx) = after_indicator.find(|c: char| !c.is_ascii_digit()) {
-                let num_str = &after_indicator[..end_idx];
-                if let Ok(num) = num_str.parse::<f32>() {
-                    info.chapter = num;
-                    return info;
-                }
-            }
-        }
-    }
-
-    // Last resort - look for any numbers that could be chapter numbers
-    for (i, c) in clean_name.char_indices() {
-        if c.is_ascii_digit() {
-            if let Some(end_idx) = clean_name[i..].find(|c: char| !c.is_ascii_digit()) {
-                let num_str = &clean_name[i..i+end_idx];
-                if let Ok(num) = num_str.parse::<f32>() {
-                    // Only use the number if we're confident it's a chapter number
-                    // (e.g., not a year or other metadata)
-                    if num < 2000.0 {  // Avoid matching years
-                        info.chapter = num;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
     info
+}
+
+/// Helper function to extract explicit chapter numbers
+fn extract_explicit_chapter_number(name: &str) -> Option<f32> {
+    // Try explicit chapter markers first
+    let chapter_markers = [" ch", "ch.", "ch ", "chapter", " c", "c."];
+    for marker in chapter_markers {
+        if let Some(idx) = name.find(marker) {
+            let after_marker = &name[idx + marker.len()..];
+            let num_str: String = after_marker
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
+            if !num_str.is_empty() {
+                if let Ok(num) = num_str.parse::<f32>() {
+                    return Some(num);
+                }
+            }
+        }
+    }
+
+    // Check for chapter number at the end of the name
+    let end_numbers: String = name
+        .chars()
+        .rev()
+        .take_while(|c| c.is_ascii_digit())
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
+    
+    if !end_numbers.is_empty() {
+        if let Ok(num) = end_numbers.parse::<f32>() {
+            if num < 2000.0 {  // Avoid matching years
+                return Some(num);
+            }
+        }
+    }
+
+    None
 }
 
 /// Decodes a URL-encoded string.
