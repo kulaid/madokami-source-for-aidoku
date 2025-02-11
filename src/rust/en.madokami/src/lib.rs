@@ -152,11 +152,6 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
 
 #[get_manga_details]
 fn get_manga_details(id: String) -> Result<Manga> {
-    // Get the current directory's HTML
-    let html = add_auth_to_request(
-        Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get)
-    ).html()?;
-    
     // Initialize metadata containers
     let mut authors: Vec<String> = Vec::new();
     let mut genres: Vec<String> = Vec::new();
@@ -173,13 +168,6 @@ fn get_manga_details(id: String) -> Result<Manga> {
             String::new()
         }
     };
-
-    // Function to get parent path by removing the last directory
-    fn get_parent_path(path: &str) -> Option<String> {
-        let cleaned_path = path.trim_matches('/');
-        let last_slash = cleaned_path.rfind('/')?;
-        Some(format!("/{}/", &cleaned_path[..last_slash]))
-    }
 
     // Get metadata from parent directory since that's where it's stored
     if let Some(parent_path) = get_parent_path(&id) {
