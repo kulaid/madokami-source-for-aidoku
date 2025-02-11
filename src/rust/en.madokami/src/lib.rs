@@ -19,18 +19,29 @@ use helper::*;
 const BASE_URL: &str = "https://manga.madokami.al";
 
 /// Adds HTTP Basic authentication headers to a request if credentials are available.
-fn add_auth_to_request(request: &mut Request) -> Result<()> {
-    let username = defaults_get("username")?.as_string()?.read();
-    let password = defaults_get("password")?.as_string()?.read();
+fn add_auth_to_request(request: Request) -> Request {
+    // Try to get the username and password from defaults.
+    // If any step fails, we just fall back to the original request.
+    let username = defaults_get("username")
+        .and_then(|v| v.as_string())
+        .map(|s| s.read())
+        .unwrap_or_default();
+    let password = defaults_get("password")
+        .and_then(|v| v.as_string())
+        .map(|s| s.read())
+        .unwrap_or_default();
+
     if !username.is_empty() && !password.is_empty() {
         let auth = format!(
             "Basic {}",
             general_purpose::STANDARD.encode(format!("{}:{}", username, password))
         );
-        // Overwrite the request with a version that has the Authorization header.
-        *request = request.header("Authorization", &auth);
+        // Return a new request with the Authorization header.
+        request.header("Authorization", &auth)
+    } else {
+        // No credentials—return the original request unmodified.
+        request
     }
-    Ok(())
 }
 
 #[get_manga_list]
@@ -46,7 +57,7 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
         format!("{}/recent", BASE_URL)
     };
 
-    let html = add_auth_to_request(Request::new(url.clone(), HttpMethod::Get))?.html()?;
+    let html = add_auth_to_request(Request::new(url.clone(), HttpMethod::Get)).html()?;
     
     // Select appropriate elements based on page type.
     let selector = if url.ends_with("/recent") {
@@ -81,7 +92,7 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
 
 #[get_chapter_list]
 fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
-    let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get))?.html()?;
+    let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get)).html()?;
     let mut chapters = Vec::new();
     // Extract the manga title from the id.
     let manga_title = extract_manga_title(&id);
@@ -138,7 +149,7 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
 
 #[get_manga_details]
 fn get_manga_details(id: String) -> Result<Manga> {
-    let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get))?.html()?;
+    let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get)).html()?;
     
     // Get metadata from the current page.
     let mut authors: Vec<String> = html.select("a[itemprop=\"author\"]")
@@ -197,13 +208,12 @@ fn get_manga_details(id: String) -> Result<Manga> {
 
 #[get_page_list]
 fn get_page_list(_manga_id: String, chapter_id: String) -> Result<Vec<Page>> {
-    let mut req = Request::new(format!("{}{}", BASE_URL, chapter_id), HttpMethod::Get);
-    add_auth_to_request(&mut req)?;
-    let html = req.html()?;
+    let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, chapter_id), HttpMethod::Get))
+        .html()?;
     let reader = html.select("div#reader");
     let path = reader.attr("data-path").read();
     let files = reader.attr("data-files").read();
-
+    
     let mut pages = Vec::new();
     if let Ok(file_list) = aidoku::std::json::parse(files.as_bytes()) {
         if let Ok(array) = file_list.as_array() {
@@ -228,10 +238,8 @@ fn get_page_list(_manga_id: String, chapter_id: String) -> Result<Vec<Page>> {
 }
 
 #[modify_image_request]
-fn modify_image_request(mut request: Request) -> Request {
-    // Try to add authentication; if it fails, ignore the error.
-    let _ = add_auth_to_request(&mut request);
-    request
+fn modify_image_request(request: Request) -> Request {
+    add_auth_to_request(request)
         .header("Referer", BASE_URL)
         .header("Accept", "image/*")
 }
