@@ -12,6 +12,37 @@ pub struct ChapterInfo {
     pub chapter_range: Option<(f32, f32)>,
 }
 
+/// Decodes HTML entities in the input string
+pub fn decode_html_entities(input: &str) -> String {
+    input
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#039;", "'")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+}
+
+/// Removes JavaScript and cleans HTML from description
+pub fn clean_description(input: &str) -> String {
+    // First decode any HTML entities
+    let decoded = decode_html_entities(input);
+    
+    // Remove any JavaScript section
+    if let Some(end_idx) = decoded.find("//-->") {
+        if let Some(start_idx) = decoded[..end_idx].rfind("<!--") {
+            // Get everything after the JavaScript
+            let after_script = decoded[end_idx + 5..].trim();
+            if !after_script.is_empty() {
+                return after_script.to_string();
+            }
+        }
+    }
+    
+    // If no script found or nothing after script, return decoded input
+    decoded
+}
+
 /// URL-decodes a percent-encoded string.
 pub fn url_decode(input: &str) -> String {
     let mut result = String::with_capacity(input.len());

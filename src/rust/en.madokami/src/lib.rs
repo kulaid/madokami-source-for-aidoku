@@ -159,28 +159,6 @@ fn get_manga_details(id: String) -> Result<Manga> {
     let mut cover_url = String::new();
     let mut parent_description = String::new();
 
-    // Function to clean description text
-    fn clean_description(desc: &str) -> String {
-        // First decode HTML entities
-        let decoded = html_escape::decode_html_entities(desc);
-        
-        // Find first actual content after JavaScript
-        if let Some(content_start) = decoded.find("Hunters are") {
-            let content = &decoded[content_start..];
-            
-            // Remove the "More..." and "Less..." parts
-            if let Some(more_idx) = content.find("... More...") {
-                return content[..more_idx].trim().to_string();
-            }
-            
-            // If no "More..." found, return the cleaned content
-            return content.trim().to_string();
-        }
-        
-        // If we didn't find the typical start, just return the decoded string
-        decoded.trim().to_string()
-    }
-
     // Get the current directory name (version/scan info)
     let dir_name = {
         let parts: Vec<&str> = id.trim_matches('/').split('/').collect();
