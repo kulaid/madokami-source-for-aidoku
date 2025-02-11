@@ -177,18 +177,24 @@ fn get_manga_details(id: String) -> Result<Manga> {
         status = MangaStatus::Completed;
     }
     
-    // --- Strategy 1: Remove any trailing "More" text via string trimming ---
+    // Extract the raw description text.
     let raw_desc = html.select("div.keiyoushi").text().read();
-    let keiyoushi_text = raw_desc.trim();
-    let trimmed_text = keiyoushi_text
-        .trim_end_matches(" More")
-        .trim_end_matches("More")
-        .trim();
-
-    let description = if !trimmed_text.is_empty() {
-        trimmed_text.to_string()
+    let trimmed_desc = raw_desc.trim();
+    
+    // Remove any trailing "More" word by splitting the text into words.
+    let description = if !trimmed_desc.is_empty() {
+        let words: Vec<&str> = trimmed_desc.split_whitespace().collect();
+        if let Some(&last) = words.last() {
+            if last == "More" {
+                words[..words.len()-1].join(" ")
+            } else {
+                trimmed_desc.to_string()
+            }
+        } else {
+            trimmed_desc.to_string()
+        }
     } else {
-        // Fallback: decode the last segment from the manga id.
+        // Fallback: use the last segment of the id.
         let parts: Vec<&str> = id.trim_matches('/').split('/').collect();
         if let Some(last) = parts.last() {
             url_decode(last)
@@ -197,7 +203,7 @@ fn get_manga_details(id: String) -> Result<Manga> {
         }
     };
     
-    // If some metadata is missing, attempt to fetch it from the parent directory.
+    // If some metadata is missing, try using the parent directory.
     if authors.is_empty() || genres.is_empty() || cover_url.is_empty() {
         if let Some(parent_path) = get_parent_path(&id) {
             if let Ok(parent_html) = add_auth_to_request(
@@ -237,12 +243,13 @@ fn get_manga_details(id: String) -> Result<Manga> {
         cover: cover_url,
         categories: genres,
         status,
-        description, // Now with the trimmed description (without trailing "More")
+        description, // Description with trailing "More" removed (if present)
         url: format!("{}{}", BASE_URL, id),
         viewer: MangaViewer::Rtl,
         ..Default::default()
     })
 }
+
 #[get_page_list]
 fn get_page_list(_manga_id: String, chapter_id: String) -> Result<Vec<Page>> {
     // Strip out any extra query parameter from the chapter_id.
