@@ -152,173 +152,109 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
 
 #[get_manga_details]
 fn get_manga_details(id: String) -> Result<Manga> {
-    // Initial request for the manga page
+    // Get the current directory's HTML
     let html = add_auth_to_request(
         Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get)
     ).html()?;
     
-    // Extract metadata from current page
-    let mut authors: Vec<String> = html
-        .select("a[itemprop=\"author\"]")
-        .array()
-        .filter_map(|n| n.as_node().ok().map(|node| node.text().read()))
-        .collect();
-    
-    let mut genres: Vec<String> = html
-        .select("div.genres a.tag")
-        .array()
-        .filter_map(|n| n.as_node().ok().map(|node| node.text().read()))
-        .collect();
-    
-    let mut status = if html.select("span.scanstatus").text().read() == "Yes" {
-        MangaStatus::Completed
-    } else {
-        MangaStatus::Unknown
-    };
-    
-    let mut cover_url = html
-        .select("div.manga-info img[itemprop=\"image\"]")
-        .attr("src")
-        .read();
+    // Initialize metadata containers
+    let mut authors: Vec<String> = Vec::new();
+    let mut genres: Vec<String> = Vec::new();
+    let mut status = MangaStatus::Unknown;
+    let mut cover_url = String::new();
+    let mut parent_description = String::new();
 
-    // Extract and clean directory description from the id
-    let dir_desc = {
+    // Get the current directory name (version/scan info)
+    let dir_name = {
         let parts: Vec<&str> = id.trim_matches('/').split('/').collect();
         if let Some(last) = parts.last() {
-            clean_description(&url_decode(last))
+            url_decode(last)
         } else {
             String::new()
         }
     };
 
-    // Function to extract and clean description from HTML
-    fn extract_description(html: &Node) -> String {
-        // Try to get the full description from the description div first
-        let full_desc = html
-            .select("div#div_desc_more")
-            .text()
-            .read();
-            
-        if !full_desc.is_empty() {
-            return clean_description(&full_desc);
-        }
-        
-        // If no full description, try the meta tags
-        let og_desc = html
-            .select("meta[property=\"og:description\"]")
-            .attr("content")
-            .read();
-        let meta_desc = html
-            .select("meta[name=\"description\"]")
-            .attr("content")
-            .read();
-            
-        let desc = if !og_desc.is_empty() {
-            og_desc
-        } else if !meta_desc.is_empty() {
-            meta_desc
-        } else {
-            // Last resort: try the regular description div
-            html.select("div.description").text().read()
-        };
-        
-        clean_description(&desc)
+    // Function to get parent path by removing the last directory
+    fn get_parent_path(path: &str) -> Option<String> {
+        let cleaned_path = path.trim_matches('/');
+        let last_slash = cleaned_path.rfind('/')?;
+        Some(format!("/{}/", &cleaned_path[..last_slash]))
     }
 
-    // Function to clean description text
-    fn clean_description(desc: &str) -> String {
-        let mut cleaned = desc
-            .replace("<!--", "")  // Remove HTML comments
-            .replace("-->", "")
-            .replace("function", "")  // Remove JavaScript
-            .replace("document.", "")
-            .replace("style.display", "")
-            .replace("getElementByld", "")
-            .replace("none", "")
-            .trim()
-            .to_string();
-            
-        // Remove any remaining JavaScript-like content
-        if let Some(idx) = cleaned.find("function") {
-            cleaned = cleaned[..idx].to_string();
-        }
-        
-        // Clean up multiple newlines and spaces
-        cleaned = cleaned
-            .split_whitespace()
-            .collect::<Vec<&str>>()
-            .join(" ");
-            
-        cleaned
-    }
+    // Get metadata from parent directory since that's where it's stored
+    if let Some(parent_path) = get_parent_path(&id) {
+        if let Ok(parent_html) = add_auth_to_request(
+            Request::new(format!("{}{}", BASE_URL, parent_path), HttpMethod::Get)
+        ).html() {
+            // Get cover from parent
+            cover_url = parent_html
+                .select("div.manga-info img[itemprop=\"image\"]")
+                .attr("src")
+                .read();
 
-    // Extract and clean description from current page
-    let meta_description = extract_description(&html);
+            // Get authors from parent
+            authors = parent_html
+                .select("a[itemprop=\"author\"]")
+                .array()
+                .filter_map(|n| n.as_node().ok().map(|node| node.text().read()))
+                .collect();
 
-    // Combine directory and meta descriptions
-    let mut description = if !dir_desc.is_empty() && !meta_description.is_empty() {
-        format!("{}\n{}", dir_desc.clone(), meta_description)
-    } else if !dir_desc.is_empty() {
-        dir_desc.clone()
-    } else {
-        meta_description
-    };
+            // Get genres from parent
+            genres = parent_html
+                .select("div.genres a.tag")
+                .array()
+                .filter_map(|n| n.as_node().ok().map(|node| node.text().read()))
+                .collect();
 
-    // If metadata is missing, try getting it from parent directory
-    if authors.is_empty() || genres.is_empty() || cover_url.is_empty() || description.is_empty() {
-        if let Some(parent_path) = get_parent_path(&id) {
-            if let Ok(parent_html) = add_auth_to_request(
-                Request::new(format!("{}{}", BASE_URL, parent_path), HttpMethod::Get)
-            ).html() {
-                // Try to get cover from parent if missing
-                if cover_url.is_empty() {
-                    cover_url = parent_html
-                        .select("div.manga-info img[itemprop=\"image\"]")
-                        .attr("src")
+            // Get description from parent
+            // First try the full description div
+            let mut desc = parent_html
+                .select("div#div_desc_more")
+                .text()
+                .read();
+                
+            // If that's empty, try meta tags
+            if desc.is_empty() {
+                desc = parent_html
+                    .select("meta[property=\"og:description\"]")
+                    .attr("content")
+                    .read();
+                    
+                if desc.is_empty() {
+                    desc = parent_html
+                        .select("meta[name=\"description\"]")
+                        .attr("content")
                         .read();
                 }
+            }
+            
+            // If still empty, try regular description div
+            if desc.is_empty() {
+                desc = parent_html
+                    .select("div.description")
+                    .text()
+                    .read();
+            }
+            
+            parent_description = desc.trim().to_string();
 
-                // Try to get authors from parent if missing
-                if authors.is_empty() {
-                    authors = parent_html
-                        .select("a[itemprop=\"author\"]")
-                        .array()
-                        .filter_map(|n| n.as_node().ok().map(|node| node.text().read()))
-                        .collect();
-                }
-
-                // Try to get genres from parent if missing
-                if genres.is_empty() {
-                    genres = parent_html
-                        .select("div.genres a.tag")
-                        .array()
-                        .filter_map(|n| n.as_node().ok().map(|node| node.text().read()))
-                        .collect();
-                }
-
-                // Try to get description from parent if missing
-                if description.is_empty() {
-                    let parent_meta_description = extract_description(&parent_html);
-
-                    // Combine directory text with parent's meta description
-                    if !dir_desc.is_empty() && !parent_meta_description.is_empty() {
-                        description = format!("{}\n{}", dir_desc, parent_meta_description);
-                    } else if !dir_desc.is_empty() {
-                        description = dir_desc;
-                    } else {
-                        description = parent_meta_description;
-                    }
-                }
-
-                // Check status in parent if still unknown
-                if status == MangaStatus::Unknown && parent_html.select("span.scanstatus").text().read() == "Yes" {
-                    status = MangaStatus::Completed;
-                }
+            // Check status
+            if parent_html.select("span.scanstatus").text().read() == "Yes" {
+                status = MangaStatus::Completed;
             }
         }
     }
 
-    // Return the complete manga object
+    // Build the final description
+    let description = if !dir_name.is_empty() && !parent_description.is_empty() {
+        format!("{}\n\n{}", dir_name, parent_description)
+    } else if !dir_name.is_empty() {
+        dir_name.clone()
+    } else {
+        parent_description
+    };
+
+    // Return the manga object with all metadata
     Ok(Manga {
         id: id.clone(),
         title: extract_manga_title(&id),
