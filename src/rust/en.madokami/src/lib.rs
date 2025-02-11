@@ -19,7 +19,7 @@ use helper::*;
 const BASE_URL: &str = "https://manga.madokami.al";
 
 /// Adds HTTP Basic authentication headers to a request if credentials are available.
-fn add_auth_to_request(request: Request) -> Result<Request> {
+fn add_auth_to_request(request: &Request) -> Result<Request> {
     let username = defaults_get("username")?.as_string()?.read();
     let password = defaults_get("password")?.as_string()?.read();
     if !username.is_empty() && !password.is_empty() {
@@ -27,9 +27,10 @@ fn add_auth_to_request(request: Request) -> Result<Request> {
             "Basic {}",
             general_purpose::STANDARD.encode(format!("{}:{}", username, password))
         );
-        Ok(request.header("Authorization", &auth))
+        // Clone the request here so that we can add the header.
+        Ok(request.clone().header("Authorization", &auth))
     } else {
-        Ok(request)
+        Ok(request.clone())
     }
 }
 
@@ -227,7 +228,7 @@ fn get_page_list(_manga_id: String, chapter_id: String) -> Result<Vec<Page>> {
 
 #[modify_image_request]
 fn modify_image_request(request: Request) -> Request {
-    let request = add_auth_to_request(request).unwrap_or(request);
+    let request = add_auth_to_request(&request).unwrap_or(request);
     request.header("Referer", BASE_URL)
            .header("Accept", "image/*")
 }
