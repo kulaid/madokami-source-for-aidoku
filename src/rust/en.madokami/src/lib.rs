@@ -256,7 +256,7 @@ fn get_manga_details(id: String) -> Result<Manga> {
         viewer: MangaViewer::Rtl,
         ..Default::default()
     })
-}=
+}
 
 #[get_page_list]
 fn get_page_list(_manga_id: String, chapter_id: String) -> Result<Vec<Page>> {
