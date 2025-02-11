@@ -177,31 +177,23 @@ fn get_manga_details(id: String) -> Result<Manga> {
         status = MangaStatus::Completed;
     }
     
-	// Extract the raw description text from the keiyoushi container.
-	let raw_desc = html.select("div.keiyoushi").text().read();
-	let trimmed_desc = raw_desc.trim();
-
-	// Split the description into words.
-	let words: Vec<&str> = trimmed_desc.split_whitespace().collect();
-
-	// Check if the last word (after removing any extra whitespace and non‑breaking spaces) is "More".
-	let description = if !words.is_empty() {
-		let last_word = words.last().unwrap().replace("\u{00A0}", "").trim().to_lowercase();
-		if last_word == "more" {
-			// Join all words except the last one.
-			words[..words.len()-1].join(" ")
-		} else {
-			trimmed_desc.to_string()
-		}
-	} else {
-		// Fallback: if there's no description, decode the last segment from the id.
-		let parts: Vec<&str> = id.trim_matches('/').split('/').collect();
-		if let Some(last) = parts.last() {
-			url_decode(last)
-		} else {
-			String::new()
-		}
-	};
+    // Extract the description from the meta tags.
+    let og_desc = html
+        .select("meta[property=\"og:description\"]")
+        .attr("content")
+        .read();
+    let meta_desc = html
+        .select("meta[name=\"description\"]")
+        .attr("content")
+        .read();
+    
+    let description = if !og_desc.is_empty() {
+        og_desc.trim().to_string()
+    } else if !meta_desc.is_empty() {
+        meta_desc.trim().to_string()
+    } else {
+        String::new()
+    };
     
     // If some metadata is missing, try using the parent directory.
     if authors.is_empty() || genres.is_empty() || cover_url.is_empty() {
@@ -243,7 +235,7 @@ fn get_manga_details(id: String) -> Result<Manga> {
         cover: cover_url,
         categories: genres,
         status,
-        description, // Description with trailing "More" removed (if present)
+        description, // Now using the meta tag description.
         url: format!("{}{}", BASE_URL, id),
         viewer: MangaViewer::Rtl,
         ..Default::default()
