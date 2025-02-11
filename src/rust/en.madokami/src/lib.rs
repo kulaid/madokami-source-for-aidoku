@@ -178,18 +178,26 @@ fn get_manga_details(id: String) -> Result<Manga> {
     }
     
     // Extract the description from the keiyoushi element.
-    // If the keiyoushi element is empty, fallback to the last segment of the id.
+    // After trimming, remove a trailing " More" (if present) so the "More" icon does not show.
     let description = {
-        let keiyoushi_text = html
+        let mut keiyoushi_text = html
             .select("div.keiyoushi")
             .text()
             .read()
             .trim()
             .to_string();
+        if keiyoushi_text.ends_with(" More") {
+            // Remove the trailing " More" and trim any extra whitespace.
+            keiyoushi_text = keiyoushi_text
+                .strip_suffix(" More")
+                .unwrap_or(&keiyoushi_text)
+                .trim()
+                .to_string();
+        }
         if !keiyoushi_text.is_empty() {
             keiyoushi_text
         } else {
-            // Fallback: decode the last segment from the manga path.
+            // Fallback: use the last segment of the id.
             let parts: Vec<&str> = id.trim_matches('/').split('/').collect();
             if let Some(last) = parts.last() {
                 url_decode(last)
@@ -239,7 +247,7 @@ fn get_manga_details(id: String) -> Result<Manga> {
         cover: cover_url,
         categories: genres,
         status,
-        description, // <-- new field with the keiyoushi-based description.
+        description, // Now without the trailing " More"
         url: format!("{}{}", BASE_URL, id),
         viewer: MangaViewer::Rtl,
         ..Default::default()
