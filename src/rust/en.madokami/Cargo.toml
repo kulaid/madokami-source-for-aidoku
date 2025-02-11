@@ -18,3 +18,4 @@ lto = true
 [dependencies]
 aidoku = { git = "https://github.com/Aidoku/aidoku-rs", default-features = false, features = ["dlmalloc"] }
 base64 = { version = "0.21.0", default-features = false, features = ["alloc"] }
+html-escape = "0.2.13"
