@@ -156,7 +156,7 @@ fn get_manga_details(id: String) -> Result<Manga> {
         Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get)
     ).html()?;
     
-    // Extract metadata from the current page.
+    // Extract standard metadata.
     let mut authors: Vec<String> = html
         .select("a[itemprop=\"author\"]")
         .array()
@@ -177,37 +177,27 @@ fn get_manga_details(id: String) -> Result<Manga> {
         status = MangaStatus::Completed;
     }
     
-    // Extract the description from the keiyoushi element.
-    // After trimming, remove a trailing " More" (if present) so the "More" icon does not show.
-    let description = {
-        let mut keiyoushi_text = html
-            .select("div.keiyoushi")
-            .text()
-            .read()
-            .trim()
-            .to_string();
-        if keiyoushi_text.ends_with(" More") {
-            // Remove the trailing " More" and trim any extra whitespace.
-            keiyoushi_text = keiyoushi_text
-                .strip_suffix(" More")
-                .unwrap_or(&keiyoushi_text)
-                .trim()
-                .to_string();
-        }
-        if !keiyoushi_text.is_empty() {
-            keiyoushi_text
+    // --- Strategy 1: Remove any trailing "More" text via string trimming ---
+    let raw_desc = html.select("div.keiyoushi").text().read();
+    let keiyoushi_text = raw_desc.trim();
+    let trimmed_text = keiyoushi_text
+        .trim_end_matches(" More")
+        .trim_end_matches("More")
+        .trim();
+
+    let description = if !trimmed_text.is_empty() {
+        trimmed_text.to_string()
+    } else {
+        // Fallback: decode the last segment from the manga id.
+        let parts: Vec<&str> = id.trim_matches('/').split('/').collect();
+        if let Some(last) = parts.last() {
+            url_decode(last)
         } else {
-            // Fallback: use the last segment of the id.
-            let parts: Vec<&str> = id.trim_matches('/').split('/').collect();
-            if let Some(last) = parts.last() {
-                url_decode(last)
-            } else {
-                String::new()
-            }
+            String::new()
         }
     };
     
-    // If metadata is missing, try using the parent directory.
+    // If some metadata is missing, attempt to fetch it from the parent directory.
     if authors.is_empty() || genres.is_empty() || cover_url.is_empty() {
         if let Some(parent_path) = get_parent_path(&id) {
             if let Ok(parent_html) = add_auth_to_request(
@@ -247,13 +237,12 @@ fn get_manga_details(id: String) -> Result<Manga> {
         cover: cover_url,
         categories: genres,
         status,
-        description, // Now without the trailing " More"
+        description, // Now with the trimmed description (without trailing "More")
         url: format!("{}{}", BASE_URL, id),
         viewer: MangaViewer::Rtl,
         ..Default::default()
     })
 }
-
 #[get_page_list]
 fn get_page_list(_manga_id: String, chapter_id: String) -> Result<Vec<Page>> {
     // Strip out any extra query parameter from the chapter_id.
