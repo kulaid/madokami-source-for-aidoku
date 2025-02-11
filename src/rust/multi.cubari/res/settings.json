@@ -1,0 +1,59 @@
+[
+    {
+        "type": "group",
+        "title": "Help",
+        "items": [
+            {
+                "type": "switch",
+                "title": "Show help",
+                "key": "showHelp",
+                "default": true
+            }
+        ]
+    },
+    {
+        "type": "group",
+        "title": "History synchronization",
+        "items": [
+            {
+                "type": "text",
+                "placeholder": "user@provider.com",
+                "key": "rsAddress",
+                "notification": "rsAddress",
+                "autocapitalizationType": 0,
+                "autocorrectionType": 1,
+                "spellCheckingType": 1,
+                "keyboardType": 7
+            },
+            {
+                "type": "login",
+                "method": "oauth",
+                "title": "Login",
+                "logoutTitle": "Logout",
+                "key": "rsToken",
+                "urlKey": "rsOauthUrl",
+                "notification": "rsAuthComplete"
+            }
+        ],
+        "footer": "Log in to a remotestorage provider to synchronize your reading history with Cubari."
+    },
+    {
+        "type": "group",
+        "title": "History",
+        "items": [
+            {
+                "type": "switch",
+                "title": "Track reading history",
+                "key": "saveSeries",
+                "default": true
+            },
+            {
+                "type": "button",
+                "title": "Delete history",
+                "action": "deleteHistory",
+                "destructive": true
+            }
+        ],
+        "footer": "History will be deleted after source restart."
+    }
+]
