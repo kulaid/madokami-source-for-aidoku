@@ -159,11 +159,50 @@ fn get_manga_details(id: String) -> Result<Manga> {
     let mut cover_url = String::new();
     let mut parent_description = String::new();
 
+    // Function to clean description text
+    fn clean_description(text: &str) -> String {
+        // First, remove any JavaScript sections
+        let no_js = if let Some(idx) = text.find("<!--") {
+            if let Some(end_idx) = text.find("-->") {
+                // Get text before comment and after comment
+                format!("{}{}", 
+                    &text[..idx].trim(),
+                    &text[end_idx + 3..].trim()
+                )
+            } else {
+                text[..idx].trim().to_string()
+            }
+        } else {
+            text.to_string()
+        };
+
+        // Replace problematic characters
+        let cleaned = no_js
+            .replace('！', "!")  // Replace full-width exclamation mark
+            .replace('　', " ")  // Replace full-width space
+            .replace('\u{3000}', " "); // Replace ideographic space
+
+        // Remove any remaining script-like content
+        let no_script = if let Some(idx) = cleaned.find("function") {
+            cleaned[..idx].trim().to_string()
+        } else {
+            cleaned
+        };
+
+        // Final cleanup of whitespace and normalize spaces
+        no_script
+            .split_whitespace()
+            .collect::<Vec<&str>>()
+            .join(" ")
+            .trim()
+            .to_string()
+    }
+
     // Get the current directory name (version/scan info)
     let dir_name = {
         let parts: Vec<&str> = id.trim_matches('/').split('/').collect();
         if let Some(last) = parts.last() {
-            url_decode(last)
+            clean_description(&url_decode(last))
         } else {
             String::new()
         }
@@ -194,37 +233,42 @@ fn get_manga_details(id: String) -> Result<Manga> {
                 .filter_map(|n| n.as_node().ok().map(|node| node.text().read()))
                 .collect();
 
-            // Get description from parent
-            // First try the full description div
-            let mut desc = parent_html
-                .select("div#div_desc_more")
-                .text()
-                .read();
-                
-            // If that's empty, try meta tags
-            if desc.is_empty() {
-                desc = parent_html
-                    .select("meta[property=\"og:description\"]")
-                    .attr("content")
-                    .read();
-                    
-                if desc.is_empty() {
-                    desc = parent_html
-                        .select("meta[name=\"description\"]")
-                        .attr("content")
-                        .read();
-                }
-            }
-            
-            // If still empty, try regular description div
-            if desc.is_empty() {
-                desc = parent_html
+            // Get description from parent with priority order
+            let desc = {
+                // First try the regular description div
+                let mut desc = parent_html
                     .select("div.description")
                     .text()
                     .read();
-            }
+
+                // If that's empty, try the full description div
+                if desc.is_empty() {
+                    desc = parent_html
+                        .select("div#div_desc_more")
+                        .text()
+                        .read();
+                }
+                
+                // If still empty, try meta tags
+                if desc.is_empty() {
+                    desc = parent_html
+                        .select("meta[property=\"og:description\"]")
+                        .attr("content")
+                        .read();
+                        
+                    if desc.is_empty() {
+                        desc = parent_html
+                            .select("meta[name=\"description\"]")
+                            .attr("content")
+                            .read();
+                    }
+                }
+                
+                desc
+            };
             
-            parent_description = desc.trim().to_string();
+            // Clean the description
+            parent_description = clean_description(&desc);
 
             // Check status
             if parent_html.select("span.scanstatus").text().read() == "Yes" {
@@ -237,7 +281,7 @@ fn get_manga_details(id: String) -> Result<Manga> {
     let description = if !dir_name.is_empty() && !parent_description.is_empty() {
         format!("{}\n\n{}", dir_name, parent_description)
     } else if !dir_name.is_empty() {
-        dir_name.clone()
+        dir_name
     } else {
         parent_description
     };
