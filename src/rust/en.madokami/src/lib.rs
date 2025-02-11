@@ -177,24 +177,25 @@ fn get_manga_details(id: String) -> Result<Manga> {
         status = MangaStatus::Completed;
     }
     
-    // Extract the description from the meta tags.
-    let og_desc = html
-        .select("meta[property=\"og:description\"]")
-        .attr("content")
-        .read();
-    let meta_desc = html
-        .select("meta[name=\"description\"]")
-        .attr("content")
-        .read();
-    
-    let description = if !og_desc.is_empty() {
-        og_desc.trim().to_string()
-    } else if !meta_desc.is_empty() {
-        meta_desc.trim().to_string()
-    } else {
-        String::new()
-    };
-    
+	// Extract the description from the meta tags.
+	let og_desc = html
+		.select("meta[property=\"og:description\"]")
+		.attr("content")
+		.read();
+	let meta_desc = html
+		.select("meta[name=\"description\"]")
+		.attr("content")
+		.read();
+
+	// Make the description mutable so we can update it later if needed.
+	let mut description = if !og_desc.is_empty() {
+		og_desc.trim().to_string()
+	} else if !meta_desc.is_empty() {
+		meta_desc.trim().to_string()
+	} else {
+		String::new()
+	};
+
 	// If some metadata is missing, try using the parent directory.
 	if authors.is_empty() || genres.is_empty() || cover_url.is_empty() || description.is_empty() {
 		if let Some(parent_path) = get_parent_path(&id) {
@@ -255,7 +256,7 @@ fn get_manga_details(id: String) -> Result<Manga> {
         viewer: MangaViewer::Rtl,
         ..Default::default()
     })
-}
+}=
 
 #[get_page_list]
 fn get_page_list(_manga_id: String, chapter_id: String) -> Result<Vec<Page>> {
