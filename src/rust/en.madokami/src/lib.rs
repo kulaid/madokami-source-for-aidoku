@@ -181,18 +181,29 @@ fn get_manga_details(id: String) -> Result<Manga> {
         .attr("src")
         .read();
 
-    // Extract directory description from the id
+    // Extract and clean directory description from the id
     let dir_desc = {
         let parts: Vec<&str> = id.trim_matches('/').split('/').collect();
         if let Some(last) = parts.last() {
-            url_decode(last)
+            clean_description(&url_decode(last))
         } else {
             String::new()
         }
     };
 
-    // Extract meta description from current page
-    let meta_description = {
+    // Function to extract and clean description from HTML
+    fn extract_description(html: &Node) -> String {
+        // Try to get the full description from the description div first
+        let full_desc = html
+            .select("div#div_desc_more")
+            .text()
+            .read();
+            
+        if !full_desc.is_empty() {
+            return clean_description(&full_desc);
+        }
+        
+        // If no full description, try the meta tags
         let og_desc = html
             .select("meta[property=\"og:description\"]")
             .attr("content")
@@ -201,15 +212,48 @@ fn get_manga_details(id: String) -> Result<Manga> {
             .select("meta[name=\"description\"]")
             .attr("content")
             .read();
-        
-        if !og_desc.is_empty() {
-            og_desc.trim().to_string()
+            
+        let desc = if !og_desc.is_empty() {
+            og_desc
         } else if !meta_desc.is_empty() {
-            meta_desc.trim().to_string()
+            meta_desc
         } else {
-            String::new()
+            // Last resort: try the regular description div
+            html.select("div.description").text().read()
+        };
+        
+        clean_description(&desc)
+    }
+
+    // Function to clean description text
+    fn clean_description(desc: &str) -> String {
+        let mut cleaned = desc
+            .replace("<!--", "")  // Remove HTML comments
+            .replace("-->", "")
+            .replace("function", "")  // Remove JavaScript
+            .replace("document.", "")
+            .replace("style.display", "")
+            .replace("getElementByld", "")
+            .replace("none", "")
+            .trim()
+            .to_string();
+            
+        // Remove any remaining JavaScript-like content
+        if let Some(idx) = cleaned.find("function") {
+            cleaned = cleaned[..idx].to_string();
         }
-    };
+        
+        // Clean up multiple newlines and spaces
+        cleaned = cleaned
+            .split_whitespace()
+            .collect::<Vec<&str>>()
+            .join(" ");
+            
+        cleaned
+    }
+
+    // Extract and clean description from current page
+    let meta_description = extract_description(&html);
 
     // Combine directory and meta descriptions
     let mut description = if !dir_desc.is_empty() && !meta_description.is_empty() {
@@ -254,24 +298,7 @@ fn get_manga_details(id: String) -> Result<Manga> {
 
                 // Try to get description from parent if missing
                 if description.is_empty() {
-                    let parent_meta_description = {
-                        let parent_og_desc = parent_html
-                            .select("meta[property=\"og:description\"]")
-                            .attr("content")
-                            .read();
-                        let parent_meta_desc = parent_html
-                            .select("meta[name=\"description\"]")
-                            .attr("content")
-                            .read();
-                        
-                        if !parent_og_desc.is_empty() {
-                            parent_og_desc.trim().to_string()
-                        } else if !parent_meta_desc.is_empty() {
-                            parent_meta_desc.trim().to_string()
-                        } else {
-                            String::new()
-                        }
-                    };
+                    let parent_meta_description = extract_description(&parent_html);
 
                     // Combine directory text with parent's meta description
                     if !dir_desc.is_empty() && !parent_meta_description.is_empty() {
