@@ -170,7 +170,7 @@ fn get_manga_details(id: String) -> Result<Manga> {
     // If metadata is missing, try using the parent directory.
     if authors.is_empty() || genres.is_empty() || cover_url.is_empty() {
         if let Some(parent_path) = get_parent_path(&id) {
-            if let Ok(parent_html) = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, parent_path), HttpMethod::Get))?.html() {
+            if let Ok(parent_html) = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, parent_path), HttpMethod::Get)).html() {
                 if cover_url.is_empty() {
                     cover_url = parent_html.select("div.manga-info img[itemprop=\"image\"]").attr("src").read();
                 }
