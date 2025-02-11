@@ -192,29 +192,34 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
     }
 
     // (2) Look for an explicit chapter marker (" - c").
-    if let Some(pos) = clean_name.find(" - c") {
-        let chapter_part = &clean_name[pos + 4..]; // Skip " - c"
-        if let Some(dash_pos) = chapter_part.find('-') {
-            let start_str: String = chapter_part.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
-            let end_sub = &chapter_part[dash_pos + 1..];
-            let end_str: String = end_sub.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
-            if !start_str.is_empty() && !end_str.is_empty() {
-                if let (Ok(start), Ok(end)) = (start_str.parse::<f32>(), end_str.parse::<f32>()) {
-                    info.chapter = start;
-                    info.chapter_range = Some((start, end));
-                    return info;
-                }
-            }
-        } else {
-            let chapter_str: String = chapter_part.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
-            if !chapter_str.is_empty() {
-                if let Ok(ch) = chapter_str.parse::<f32>() {
-                    info.chapter = ch;
-                    return info;
-                }
-            }
-        }
-    }
+	if let Some(pos) = clean_name.find('c') {
+		let before_c = if pos > 0 { clean_name.as_bytes()[pos - 1] } else { b' ' };
+		let is_standalone_c = pos == 0 || !before_c.is_ascii_alphabetic();
+		
+		if is_standalone_c {
+			let after = &clean_name[pos + 1..];
+			let mut chapter_str = String::new();
+			let mut found_digit = false;
+			
+			for c in after.chars() {
+				if c.is_ascii_digit() {
+					chapter_str.push(c);
+					found_digit = true;
+				} else if c == '.' && found_digit {
+					chapter_str.push(c);
+				} else if found_digit {
+					break;
+				}
+			}
+			
+			if !chapter_str.is_empty() {
+				if let Ok(ch) = chapter_str.parse::<f32>() {
+					info.chapter = ch;
+					return info;
+				}
+			}
+		}
+	}
 
     // (3) Alternatively, if an explicit "c" marker is present (and not part of a word).
     if let Some(pos) = clean_name.find('c') {
