@@ -19,7 +19,7 @@ use helper::*;
 const BASE_URL: &str = "https://manga.madokami.al";
 
 /// Adds HTTP Basic authentication headers to a request if credentials are available.
-fn add_auth_to_request(request: Request) -> Result<Request> {
+fn add_auth_to_request(request: &mut Request) -> Result<()> {
     let username = defaults_get("username")?.as_string()?.read();
     let password = defaults_get("password")?.as_string()?.read();
     if !username.is_empty() && !password.is_empty() {
@@ -27,10 +27,10 @@ fn add_auth_to_request(request: Request) -> Result<Request> {
             "Basic {}",
             general_purpose::STANDARD.encode(format!("{}:{}", username, password))
         );
-        Ok(request.header("Authorization", &auth))
-    } else {
-        Ok(request)
+        // Overwrite the request with a version that has the Authorization header.
+        *request = request.header("Authorization", &auth);
     }
+    Ok(())
 }
 
 #[get_manga_list]
@@ -197,11 +197,13 @@ fn get_manga_details(id: String) -> Result<Manga> {
 
 #[get_page_list]
 fn get_page_list(_manga_id: String, chapter_id: String) -> Result<Vec<Page>> {
-    let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, chapter_id), HttpMethod::Get))?.html()?;
+    let mut req = Request::new(format!("{}{}", BASE_URL, chapter_id), HttpMethod::Get);
+    add_auth_to_request(&mut req)?;
+    let html = req.html()?;
     let reader = html.select("div#reader");
     let path = reader.attr("data-path").read();
     let files = reader.attr("data-files").read();
-    
+
     let mut pages = Vec::new();
     if let Ok(file_list) = aidoku::std::json::parse(files.as_bytes()) {
         if let Ok(array) = file_list.as_array() {
@@ -226,11 +228,12 @@ fn get_page_list(_manga_id: String, chapter_id: String) -> Result<Vec<Page>> {
 }
 
 #[modify_image_request]
-fn modify_image_request(request: Request) -> Request {
-    // Clone the request before passing it in to avoid moving the original.
-    let request = add_auth_to_request(request.clone()).unwrap_or(request);
-    request.header("Referer", BASE_URL)
-           .header("Accept", "image/*")
+fn modify_image_request(mut request: Request) -> Request {
+    // Try to add authentication; if it fails, ignore the error.
+    let _ = add_auth_to_request(&mut request);
+    request
+        .header("Referer", BASE_URL)
+        .header("Accept", "image/*")
 }
 
 #[handle_url]
