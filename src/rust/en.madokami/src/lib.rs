@@ -195,38 +195,53 @@ fn get_manga_details(id: String) -> Result<Manga> {
         String::new()
     };
     
-    // If some metadata is missing, try using the parent directory.
-    if authors.is_empty() || genres.is_empty() || cover_url.is_empty() {
-        if let Some(parent_path) = get_parent_path(&id) {
-            if let Ok(parent_html) = add_auth_to_request(
-                Request::new(format!("{}{}", BASE_URL, parent_path), HttpMethod::Get)
-            ).html() {
-                if cover_url.is_empty() {
-                    cover_url = parent_html
-                        .select("div.manga-info img[itemprop=\"image\"]")
-                        .attr("src")
-                        .read();
-                }
-                if authors.is_empty() {
-                    authors = parent_html
-                        .select("a[itemprop=\"author\"]")
-                        .array()
-                        .filter_map(|n| n.as_node().ok().map(|node| node.text().read()))
-                        .collect();
-                }
-                if genres.is_empty() {
-                    genres = parent_html
-                        .select("div.genres a.tag")
-                        .array()
-                        .filter_map(|n| n.as_node().ok().map(|node| node.text().read()))
-                        .collect();
-                }
-                if status == MangaStatus::Unknown && parent_html.select("span.scanstatus").text().read() == "Yes" {
-                    status = MangaStatus::Completed;
-                }
-            }
-        }
-    }
+	// If some metadata is missing, try using the parent directory.
+	if authors.is_empty() || genres.is_empty() || cover_url.is_empty() || description.is_empty() {
+		if let Some(parent_path) = get_parent_path(&id) {
+			if let Ok(parent_html) = add_auth_to_request(
+				Request::new(format!("{}{}", BASE_URL, parent_path), HttpMethod::Get)
+			).html() {
+				if cover_url.is_empty() {
+					cover_url = parent_html
+						.select("div.manga-info img[itemprop=\"image\"]")
+						.attr("src")
+						.read();
+				}
+				if authors.is_empty() {
+					authors = parent_html
+						.select("a[itemprop=\"author\"]")
+						.array()
+						.filter_map(|n| n.as_node().ok().map(|node| node.text().read()))
+						.collect();
+				}
+				if genres.is_empty() {
+					genres = parent_html
+						.select("div.genres a.tag")
+						.array()
+						.filter_map(|n| n.as_node().ok().map(|node| node.text().read()))
+						.collect();
+				}
+				if description.is_empty() {
+					let parent_og_desc = parent_html
+						.select("meta[property=\"og:description\"]")
+						.attr("content")
+						.read();
+					let parent_meta_desc = parent_html
+						.select("meta[name=\"description\"]")
+						.attr("content")
+						.read();
+					if !parent_og_desc.is_empty() {
+						description = parent_og_desc.trim().to_string();
+					} else if !parent_meta_desc.is_empty() {
+						description = parent_meta_desc.trim().to_string();
+					}
+				}
+				if status == MangaStatus::Unknown && parent_html.select("span.scanstatus").text().read() == "Yes" {
+					status = MangaStatus::Completed;
+				}
+			}
+		}
+	}
     
     Ok(Manga {
         id: id.clone(),
