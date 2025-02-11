@@ -10,7 +10,7 @@
                 "placeholder": "Username"
             },
             {
-                "type": "text",
+                "type": "password",
                 "key": "password",
                 "notification": "password",
                 "placeholder": "Password"
