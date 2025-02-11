@@ -92,57 +92,59 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
 
 #[get_chapter_list]
 fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
-    let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get)).html()?;
+    // Fetch the HTML page for the given manga id.
+    let html = add_auth_to_request(
+        Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get)
+    )
+    .html()?;
     let mut chapters = Vec::new();
-    // Extract the manga title from the id.
+    // Extract the manga title from the id for later parsing.
     let manga_title = extract_manga_title(&id);
     
+    // Loop over each row in the chapter table.
     for row in html.select("table#index-table > tbody > tr").array() {
         if let Ok(node) = row.as_node() {
+            // Get the raw title text.
             let title = node.select("td:nth-child(1) a").text().read();
+            // Skip rows that end with '/' or begin with '!'.
             if title.ends_with('/') || title.starts_with('!') {
                 continue;
             }
-
+            
+            // Get the base URL from the reader link.
             let base_url = node.select("td:nth-child(6) a").first().attr("href").read();
             let url = match base_url.split("/reader").last() {
                 Some(reader_part) => format!("/reader{}", reader_part),
                 None => continue,
             };
 
+            // Parse the updated date.
             let date_updated = node
                 .select("td:nth-child(3)")
                 .text()
                 .as_date("yyyy-MM-dd HH:mm", None, None);
             
+            // Parse chapter info from the filename.
             let info = parse_chapter_info(&title, &manga_title);
             
-            if let Some((start, _end)) = info.chapter_range {
-                // Instead of iterating over every chapter number in the range,
-                // create a single chapter entry using the first chapter number.
-                chapters.push(Chapter {
-                    id: url.clone(),
-                    title: format!("Ch. {} - {}", start as i32, url_decode(&title)),
-                    chapter: start,
-                    volume: if info.volume > 0.0 { info.volume } else { -1.0 },
-                    date_updated,
-                    url: format!("{}{}", BASE_URL, url),
-                    ..Default::default()
-                });
-            } else {
-                chapters.push(Chapter {
-                    id: url.clone(),
-                    title: url_decode(&title),
-                    chapter: if info.chapter > 0.0 { info.chapter } else { -1.0 },
-                    volume: if info.volume > 0.0 { info.volume } else { -1.0 },
-                    date_updated,
-                    url: format!("{}{}", BASE_URL, url),
-                    ..Default::default()
-                });
-            }
+            // Whether it's a range or a single chapter, use the starting chapter number.
+            let chapter_number = if info.chapter > 0.0 { info.chapter } else { -1.0 };
+            
+            // Create one chapter entry per file.
+            // The title is simply cleaned (file extension removed) without further modification.
+            chapters.push(Chapter {
+                id: url.clone(),
+                title: clean_filename(&url_decode(&title)),
+                chapter: chapter_number,
+                volume: if info.volume > 0.0 { info.volume } else { -1.0 },
+                date_updated,
+                url: format!("{}{}", BASE_URL, url),
+                ..Default::default()
+            });
         }
     }
-
+    
+    // Reverse the order so that the earliest chapter appears first.
     chapters.reverse();
     Ok(chapters)
 }
