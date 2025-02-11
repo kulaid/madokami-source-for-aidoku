@@ -117,31 +117,29 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
             
             let info = parse_chapter_info(&title, &manga_title);
             
-			if let Some((start, end)) = info.chapter_range {
-				for ch in (start as i32)..=(end as i32) {
-					// Append a query parameter (or any other unique string) to ensure uniqueness.
-					chapters.push(Chapter {
-						id: format!("{}?ch={}", url, ch),
-						title: format!("Chapter {}", ch),
-						chapter: ch as f32,
-						volume: if info.volume > 0.0 { info.volume } else { -1.0 },
-						date_updated,
-						url: format!("{}{}", BASE_URL, url),
-						..Default::default()
-					});
-				}
-			} else {
-				chapters.push(Chapter {
-					id: url.clone(),
-					title: url_decode(&title),
-					chapter: if info.chapter > 0.0 { info.chapter } else { -1.0 },
-					volume: if info.volume > 0.0 { info.volume } else { -1.0 },
-					date_updated,
-					url: format!("{}{}", BASE_URL, url),
-					..Default::default()
-				});
-			}
-
+            if let Some((start, _end)) = info.chapter_range {
+                // Instead of iterating over every chapter number in the range,
+                // create a single chapter entry using the first chapter number.
+                chapters.push(Chapter {
+                    id: url.clone(),
+                    title: format!("Ch. {} - {}", start as i32, url_decode(&title)),
+                    chapter: start,
+                    volume: if info.volume > 0.0 { info.volume } else { -1.0 },
+                    date_updated,
+                    url: format!("{}{}", BASE_URL, url),
+                    ..Default::default()
+                });
+            } else {
+                chapters.push(Chapter {
+                    id: url.clone(),
+                    title: url_decode(&title),
+                    chapter: if info.chapter > 0.0 { info.chapter } else { -1.0 },
+                    volume: if info.volume > 0.0 { info.volume } else { -1.0 },
+                    date_updated,
+                    url: format!("{}{}", BASE_URL, url),
+                    ..Default::default()
+                });
+            }
         }
     }
 
