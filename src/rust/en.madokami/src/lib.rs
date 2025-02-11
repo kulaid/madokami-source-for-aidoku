@@ -12,7 +12,7 @@ use aidoku::{
     Chapter, DeepLink, Filter, FilterType, Manga, MangaPageResult, MangaStatus, MangaViewer, Page,
 };
 use base64::{engine::general_purpose, Engine};
-use alloc::{string::ToString, vec::Vec, format};
+use alloc::{string::ToString, format};
 
 mod helper;
 use helper::*;
