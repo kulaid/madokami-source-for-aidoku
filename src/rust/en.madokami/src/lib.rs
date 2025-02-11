@@ -151,39 +151,75 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
 
 #[get_manga_details]
 fn get_manga_details(id: String) -> Result<Manga> {
-    let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get)).html()?;
+    let html = add_auth_to_request(
+        Request::new(format!("{}{}", BASE_URL, id), HttpMethod::Get)
+    ).html()?;
     
-    // Get metadata from the current page.
-    let mut authors: Vec<String> = html.select("a[itemprop=\"author\"]")
+    // Extract metadata from the current page.
+    let mut authors: Vec<String> = html
+        .select("a[itemprop=\"author\"]")
         .array()
         .filter_map(|n| n.as_node().ok().map(|node| node.text().read()))
         .collect();
-    let mut genres: Vec<String> = html.select("div.genres a.tag")
+    let mut genres: Vec<String> = html
+        .select("div.genres a.tag")
         .array()
         .filter_map(|n| n.as_node().ok().map(|node| node.text().read()))
         .collect();
     let mut status = MangaStatus::Unknown;
-    let mut cover_url = html.select("div.manga-info img[itemprop=\"image\"]").attr("src").read();
+    let mut cover_url = html
+        .select("div.manga-info img[itemprop=\"image\"]")
+        .attr("src")
+        .read();
     
     if html.select("span.scanstatus").text().read() == "Yes" {
         status = MangaStatus::Completed;
     }
     
+    // Extract the description from the keiyoushi element.
+    // If the keiyoushi element is empty, fallback to the last segment of the id.
+    let description = {
+        let keiyoushi_text = html
+            .select("div.keiyoushi")
+            .text()
+            .read()
+            .trim()
+            .to_string();
+        if !keiyoushi_text.is_empty() {
+            keiyoushi_text
+        } else {
+            // Fallback: decode the last segment from the manga path.
+            let parts: Vec<&str> = id.trim_matches('/').split('/').collect();
+            if let Some(last) = parts.last() {
+                url_decode(last)
+            } else {
+                String::new()
+            }
+        }
+    };
+    
     // If metadata is missing, try using the parent directory.
     if authors.is_empty() || genres.is_empty() || cover_url.is_empty() {
         if let Some(parent_path) = get_parent_path(&id) {
-            if let Ok(parent_html) = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, parent_path), HttpMethod::Get)).html() {
+            if let Ok(parent_html) = add_auth_to_request(
+                Request::new(format!("{}{}", BASE_URL, parent_path), HttpMethod::Get)
+            ).html() {
                 if cover_url.is_empty() {
-                    cover_url = parent_html.select("div.manga-info img[itemprop=\"image\"]").attr("src").read();
+                    cover_url = parent_html
+                        .select("div.manga-info img[itemprop=\"image\"]")
+                        .attr("src")
+                        .read();
                 }
                 if authors.is_empty() {
-                    authors = parent_html.select("a[itemprop=\"author\"]")
+                    authors = parent_html
+                        .select("a[itemprop=\"author\"]")
                         .array()
                         .filter_map(|n| n.as_node().ok().map(|node| node.text().read()))
                         .collect();
                 }
                 if genres.is_empty() {
-                    genres = parent_html.select("div.genres a.tag")
+                    genres = parent_html
+                        .select("div.genres a.tag")
                         .array()
                         .filter_map(|n| n.as_node().ok().map(|node| node.text().read()))
                         .collect();
@@ -202,6 +238,7 @@ fn get_manga_details(id: String) -> Result<Manga> {
         cover: cover_url,
         categories: genres,
         status,
+        description, // <-- new field with the keiyoushi-based description.
         url: format!("{}{}", BASE_URL, id),
         viewer: MangaViewer::Rtl,
         ..Default::default()
