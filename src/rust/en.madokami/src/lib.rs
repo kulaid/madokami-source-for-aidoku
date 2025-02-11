@@ -117,29 +117,31 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
             
             let info = parse_chapter_info(&title, &manga_title);
             
-            if let Some((start, end)) = info.chapter_range {
-                for ch in (start as i32)..=(end as i32) {
-                    chapters.push(Chapter {
-                        id: url.clone(),
-                        title: format!("Chapter {}", ch),
-                        chapter: ch as f32,
-                        volume: if info.volume > 0.0 { info.volume } else { -1.0 },
-                        date_updated,
-                        url: format!("{}{}", BASE_URL, url),
-                        ..Default::default()
-                    });
-                }
-            } else {
-                chapters.push(Chapter {
-                    id: url.clone(),
-                    title: url_decode(&title),
-                    chapter: if info.chapter > 0.0 { info.chapter } else { -1.0 },
-                    volume: if info.volume > 0.0 { info.volume } else { -1.0 },
-                    date_updated,
-                    url: format!("{}{}", BASE_URL, url),
-                    ..Default::default()
-                });
-            }
+			if let Some((start, end)) = info.chapter_range {
+				for ch in (start as i32)..=(end as i32) {
+					// Append a query parameter (or any other unique string) to ensure uniqueness.
+					chapters.push(Chapter {
+						id: format!("{}?ch={}", url, ch),
+						title: format!("Chapter {}", ch),
+						chapter: ch as f32,
+						volume: if info.volume > 0.0 { info.volume } else { -1.0 },
+						date_updated,
+						url: format!("{}{}", BASE_URL, url),
+						..Default::default()
+					});
+				}
+			} else {
+				chapters.push(Chapter {
+					id: url.clone(),
+					title: url_decode(&title),
+					chapter: if info.chapter > 0.0 { info.chapter } else { -1.0 },
+					volume: if info.volume > 0.0 { info.volume } else { -1.0 },
+					date_updated,
+					url: format!("{}{}", BASE_URL, url),
+					..Default::default()
+				});
+			}
+
         }
     }
 
@@ -208,8 +210,14 @@ fn get_manga_details(id: String) -> Result<Manga> {
 
 #[get_page_list]
 fn get_page_list(_manga_id: String, chapter_id: String) -> Result<Vec<Page>> {
-    let html = add_auth_to_request(Request::new(format!("{}{}", BASE_URL, chapter_id), HttpMethod::Get))
-        .html()?;
+    // Strip out any extra query parameter from the chapter_id.
+    let chapter_id = chapter_id.split("?ch=").next().unwrap_or(&chapter_id);
+    
+    let html = add_auth_to_request(
+        Request::new(format!("{}{}", BASE_URL, chapter_id), HttpMethod::Get)
+    )
+    .html()?;
+    
     let reader = html.select("div#reader");
     let path = reader.attr("data-path").read();
     let files = reader.attr("data-files").read();
