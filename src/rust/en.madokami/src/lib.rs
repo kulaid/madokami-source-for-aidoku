@@ -226,12 +226,10 @@ fn get_page_list(_manga_id: String, chapter_id: String) -> Result<Vec<Page>> {
 }
 
 #[modify_image_request]
-fn modify_image_request(request: Request) {
-    if let Ok(request_with_auth) = add_auth_to_request(request) {
-        request_with_auth
-            .header("Referer", BASE_URL)
-            .header("Accept", "image/*");
-    }
+fn modify_image_request(request: Request) -> Request {
+    let request = add_auth_to_request(request).unwrap_or(request);
+    request.header("Referer", BASE_URL)
+           .header("Accept", "image/*")
 }
 
 #[handle_url]
