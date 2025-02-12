@@ -7,8 +7,6 @@ use alloc::string::ToString;
 pub struct ChapterInfo {
     pub chapter: f32,
     pub volume: f32,
-    // This field remains available for future use.
-    pub chapter_range: Option<(f32, f32)>,
 }
 
 pub fn decode_html_entities(input: &str) -> String {
