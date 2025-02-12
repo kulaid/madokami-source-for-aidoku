@@ -163,10 +163,10 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
     let processed = remove_excluded_title(&full, manga_title);
 
     // Remove metadata by truncating at " (" if it exists
-    let truncated = if let Some(pos) = cleaned_for_parsing.find(" (") {
-        cleaned_for_parsing[..pos].trim()
+    let truncated = if let Some(pos) = processed.find(" (") {
+        processed[..pos].trim()
     } else {
-        cleaned_for_parsing.trim()
+        processed.trim()
     };
 
     // If the truncated name exactly equals the manga title, there's no chapter info
