@@ -238,7 +238,7 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
     }
 
     // (B) Fallback: Extract the trailing number (including decimals)
-    let mut end_idx = chapter_section_clean.len();
+    let end_idx = chapter_section_clean.len();
     let mut start_idx = end_idx;
     let chars: Vec<char> = chapter_section_clean.chars().collect();
     
