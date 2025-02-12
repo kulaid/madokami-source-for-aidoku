@@ -198,20 +198,20 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
         .chars()
         .rev()
         .collect();
-    if !trailing.is_empty() {
-        if let Ok(num) = trailing.parse::<f32>() {
-            // If there's no " - " delimiter (i.e. the entire truncated name is used)
-            // and a volume marker was detected (info.volume != 0),
-            // and the trailing number equals the volume,
-            // then assume there's no separate chapter info.
-            if !truncated.contains(" - ") && info.volume != 0.0 && (num - info.volume).abs() < 0.001 {
-                // Do not set chapter; likely this file only has volume info.
-            } else {
-                info.chapter = num;
-                return info;
-            }
-        }
-    }
+	if !trailing.is_empty() {
+		if let Ok(num) = trailing.parse::<f32>() {
+			// If there is no delimiter, we detected a volume marker,
+			// and the trailing number equals the volume,
+			// then there is no separate chapter info.
+			if !truncated.contains(" - ") && info.volume != 0.0 && (num - info.volume).abs() < 0.001 {
+				return info; // Return early so fallback (C) is not executed.
+			} else {
+				info.chapter = num;
+				return info;
+			}
+		}
+	}
+
 
     // (C) Additional Fallback:
     // If there's no delimiter and the truncated name starts with the manga title,
