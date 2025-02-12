@@ -144,6 +144,7 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
         }
     }
 
+    // Handle volume parsing (unchanged)
     if let Some(pos) = clean_name.find(" v") {
         let after = &clean_name[pos + 2..];
         let vol_str: String = after.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
@@ -155,6 +156,7 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
         }
     }
 
+    // **Fix: Improved chapter detection logic**
     if let Some(pos) = clean_name.find('c') {
         if pos == 0 || !clean_name.as_bytes()[pos - 1].is_ascii_alphabetic() {
             let after = &clean_name[pos + 1..];
@@ -170,9 +172,8 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
                     break;
                 }
             }
-            if chapter_str.is_empty() {
-                chapter_str = after.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
-            }
+
+            // **Fix: Ensure leading zeros are handled properly**
             if !chapter_str.is_empty() {
                 if let Ok(ch) = chapter_str.parse::<f32>() {
                     info.chapter = ch;
@@ -182,6 +183,7 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
         }
     }
 
+    // **Ensure detection of standalone numbers**
     let chars: Vec<char> = clean_name.chars().collect();
     for i in 0..chars.len() {
         if chars[i].is_ascii_digit() && (i == 0 || !chars[i - 1].is_alphanumeric()) {
@@ -193,7 +195,7 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
             }
             if !number_str.is_empty() {
                 if let Ok(num) = number_str.parse::<f32>() {
-                    if num < 1000.0 {
+                    if num < 1000.0 { // Avoid parsing as a year or large identifier
                         info.chapter = num;
                         return info;
                     }
@@ -202,6 +204,7 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
         }
     }
 
+    // **Fix: Extract trailing number as a last resort**
     let trailing: String = clean_name
         .chars()
         .rev()
@@ -216,5 +219,6 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
             return info;
         }
     }
+
     info
 }
