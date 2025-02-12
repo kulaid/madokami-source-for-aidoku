@@ -131,9 +131,8 @@ fn get_exclusions() -> Vec<&'static str> {
         .collect()
 }
 
-/// Returns a cleaned version of the filename with numbers from excluded titles removed,
-/// but only when they appear in the same context as in the title
-fn clean_excluded_numbers(filename: &str, manga_title: &str) -> String {
+/// Removes the manga title from the filename if it's in the exclusion list
+fn remove_excluded_title(filename: &str, manga_title: &str) -> String {
     let exclusions = get_exclusions();
     let lower_filename = filename.to_lowercase();
     let lower_title = manga_title.trim().to_lowercase();
@@ -142,46 +141,14 @@ fn clean_excluded_numbers(filename: &str, manga_title: &str) -> String {
         return filename.to_string();
     }
     
-    let mut cleaned = lower_filename;
-    
-    // Extract number patterns with their surrounding context
-    let mut i = 0;
-    let title_chars: Vec<char> = lower_title.chars().collect();
-    
-    while i < title_chars.len() {
-        if title_chars[i].is_ascii_digit() {
-            let mut number = String::new();
-            let start_idx = i;
-            
-            // Get the full number
-            while i < title_chars.len() && title_chars[i].is_ascii_digit() {
-                number.push(title_chars[i]);
-                i += 1;
-            }
-            
-            // Get surrounding context (up to 3 chars before and after)
-            let context_start = start_idx.saturating_sub(3);
-            let context_end = (i + 3).min(title_chars.len());
-            let pattern: String = title_chars[context_start..context_end].iter().collect();
-            
-            // Only remove the number if it appears with similar context
-            // Skip if the number appears after 'v' or 'c' (likely volume/chapter markers)
-            if let Some(pos) = cleaned.find(&pattern) {
-                let before_char = if pos > 0 {
-                    cleaned.chars().nth(pos - 1)
-                } else {
-                    None
-                };
-                
-                if before_char != Some('v') && before_char != Some('c') {
-                    cleaned = cleaned.replacen(&pattern, &pattern.replace(&number, ""), 1);
-                }
-            }
-        }
-        i += 1;
+    // If the filename starts with the manga title, remove it
+    if lower_filename.starts_with(&lower_title) {
+        // Return the remainder of the filename, trimmed
+        return filename[manga_title.len()..].trim().to_string();
     }
     
-    cleaned
+    filename.to_string()
+}
 }
 
 /// Parses chapter and volume information from a given filename,
@@ -193,8 +160,8 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
     let full = clean_filename(&url_decode(filename).to_lowercase());
     let clean_manga = manga_title.to_lowercase();
     
-    // Clean the filename of numbers from excluded titles
-    let cleaned_for_parsing = clean_excluded_numbers(&full, manga_title);
+    // Remove the title if it's in the exclusion list
+    let processed = remove_excluded_title(&full, manga_title);
 
     // Remove metadata by truncating at " (" if it exists
     let truncated = if let Some(pos) = cleaned_for_parsing.find(" (") {
