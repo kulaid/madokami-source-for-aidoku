@@ -143,7 +143,6 @@ fn remove_excluded_title(filename: &str, manga_title: &str) -> String {
     
     // If the filename starts with the manga title, remove it
     if lower_filename.starts_with(&lower_title) {
-        // Return the remainder of the filename, trimmed
         return filename[manga_title.len()..].trim().to_string();
     }
     
@@ -175,28 +174,32 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
     }
 
     // --- Volume Extraction ---
-    // (1) Look for a volume marker in parenthesized form (e.g. "(v15)")
-    if let Some(start) = truncated.find("(v") {
-        let vol_start = start + 2;
-        let vol_str: String = truncated[vol_start..]
-            .chars()
-            .take_while(|c| c.is_ascii_digit())
-            .collect();
-        if !vol_str.is_empty() {
-            if let Ok(vol) = vol_str.parse::<f32>() {
-                info.volume = vol;
+    let mut check_volume = |text: &str| -> Option<f32> {
+        // Check for volume markers: v##, vol##, volume##
+        for marker in &["v", "vol", "volume"] {
+            for prefix in &["", " ", "("] {
+                let pattern = format!("{}{}", prefix, marker);
+                if let Some(pos) = text.to_lowercase().find(&pattern) {
+                    let after_marker = &text[pos + pattern.len()..];
+                    let vol_str: String = after_marker
+                        .trim_start()
+                        .chars()
+                        .take_while(|c| c.is_ascii_digit())
+                        .collect();
+                    if !vol_str.is_empty() {
+                        if let Ok(vol) = vol_str.parse::<f32>() {
+                            return Some(vol);
+                        }
+                    }
+                }
             }
         }
-    }
-    // (2) Otherwise, check for an unparenthesized marker like " v<digits>"
-    else if let Some(pos) = truncated.find(" v") {
-        let after = &truncated[pos + 2..];
-        let vol_str: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
-        if !vol_str.is_empty() {
-            if let Ok(vol) = vol_str.parse::<f32>() {
-                info.volume = vol;
-            }
-        }
+        None
+    };
+
+    // Check for volume in the truncated string
+    if let Some(vol) = check_volume(&truncated) {
+        info.volume = vol;
     }
 
     // --- Determine the Chapter Section ---
@@ -247,22 +250,28 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
         }
     }
 
-    // (B) Fallback: Extract the trailing group of digits
-    let trailing: String = chapter_section_clean
-        .chars()
-        .rev()
-        .take_while(|c| c.is_ascii_digit())
-        .collect::<String>()
-        .chars()
-        .rev()
-        .collect();
-    if !trailing.is_empty() {
-        if let Ok(num) = trailing.parse::<f32>() {
-            if !truncated.contains(" - ") && info.volume != 0.0 && (num - info.volume).abs() < 0.001 {
-                return info;
-            } else {
-                info.chapter = num;
-                return info;
+    // (B) Fallback: Extract the trailing number (including decimals)
+    let mut end_idx = chapter_section_clean.len();
+    let mut start_idx = end_idx;
+    let chars: Vec<char> = chapter_section_clean.chars().collect();
+    
+    // Find the end of the number (going backwards)
+    while start_idx > 0 && (chars[start_idx - 1].is_ascii_digit() || chars[start_idx - 1] == '.') {
+        start_idx -= 1;
+    }
+    
+    // Only process if we found some digits
+    if start_idx < end_idx {
+        let number_str = &chapter_section_clean[start_idx..end_idx];
+        // Only parse if it starts with a digit (avoid parsing just ".")
+        if number_str.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+            if let Ok(num) = number_str.parse::<f32>() {
+                if !truncated.contains(" - ") && info.volume != 0.0 && (num - info.volume).abs() < 0.001 {
+                    return info;
+                } else {
+                    info.chapter = num;
+                    return info;
+                }
             }
         }
     }
