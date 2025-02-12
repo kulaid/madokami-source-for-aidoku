@@ -12,7 +12,7 @@ pub struct ChapterInfo {
     pub chapter_range: Option<(f32, f32)>,
 }
 
-/// Decodes HTML entities in the input string
+/// Decodes HTML entities in the input string.
 pub fn decode_html_entities(input: &str) -> String {
     input
         .replace("&lt;", "<")
@@ -23,15 +23,14 @@ pub fn decode_html_entities(input: &str) -> String {
         .replace("&amp;", "&")
 }
 
-/// Removes JavaScript and cleans HTML from description
+/// Removes JavaScript and cleans HTML from description.
 pub fn clean_description(input: &str) -> String {
-    // First decode any HTML entities
+    // First decode any HTML entities.
     let decoded = decode_html_entities(input);
     
-    // Remove any JavaScript section
+    // Remove any JavaScript section.
     if let Some(end_idx) = decoded.find("//-->") {
-        if let Some(start_idx) = decoded[..end_idx].rfind("<!--") {
-            // Get everything after the JavaScript
+        if let Some(_start_idx) = decoded[..end_idx].rfind("<!--") {
             let after_script = decoded[end_idx + 5..].trim();
             if !after_script.is_empty() {
                 return after_script.to_string();
@@ -39,15 +38,14 @@ pub fn clean_description(input: &str) -> String {
         }
     }
     
-    // If no script found or nothing after script, return decoded input
     decoded
 }
 
 /// URL-decodes a percent-encoded string.
 pub fn url_decode(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
-    let mut i = 0;
     let bytes = input.as_bytes();
+    let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
             if let (Some(h1), Some(h2)) = (hex_val(bytes[i + 1]), hex_val(bytes[i + 2])) {
@@ -99,7 +97,6 @@ pub fn url_encode(input: &str) -> String {
 
 /// Removes common manga archive extensions from the filename.
 pub fn clean_filename(filename: &str) -> String {
-    // Common extensions to remove.
     const EXTENSIONS: &[&str] = &[
         ".cbz", ".zip", ".cbr", ".rar", ".7z", ".pdf", ".epub", 
         ".png", ".jpg", ".jpeg", ".gif", ".xml", ".txt"
@@ -108,7 +105,6 @@ pub fn clean_filename(filename: &str) -> String {
     let mut cleaned = filename.to_string();
     let cleaned_lower = cleaned.to_lowercase();
     
-    // Remove any of the specified extensions.
     for ext in EXTENSIONS {
         if cleaned_lower.ends_with(ext) {
             cleaned.truncate(cleaned.len() - ext.len());
@@ -119,9 +115,7 @@ pub fn clean_filename(filename: &str) -> String {
     cleaned
 }
 
-/// Extracts a manga title from the given path by trimming leading/trailing slashes,
-/// splitting on '/', URL-decoding each segment, cleaning it, and returning the first segment
-/// (from the end) that does not start with '!' and does not contain unwanted markers.
+/// Extracts a manga title from the given path.
 pub fn extract_manga_title(path: &str) -> String {
     let trimmed = path.trim_matches('/');
     let parts: Vec<&str> = trimmed.split('/').collect();
@@ -136,8 +130,7 @@ pub fn extract_manga_title(path: &str) -> String {
     String::new()
 }
 
-/// Returns the parent path of the given path by collecting its segments until a segment
-/// with unwanted markers (like "VIZBIG" or one starting with '!') is encountered.
+/// Returns the parent path of the given path.
 pub fn get_parent_path(path: &str) -> Option<String> {
     let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
     let mut parent_parts = Vec::new();
@@ -158,8 +151,7 @@ pub fn get_parent_path(path: &str) -> Option<String> {
 /// Parses chapter/volume information from a filename given the manga title.
 pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
     let mut info = ChapterInfo::default();
-    let clean_name = url_decode(filename).to_lowercase();
-    let clean_name = clean_filename(&clean_name);
+    let clean_name = clean_filename(&url_decode(filename).to_lowercase());
     let clean_manga = manga_title.to_lowercase();
 
     // (A) If the filename equals the manga title exactly, assume no chapter.
@@ -191,41 +183,27 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
         }
     }
 
-    // (2) Look for an explicit chapter marker (" - c").
-	if let Some(pos) = clean_name.find('c') {
-		let before_c = if pos > 0 { clean_name.as_bytes()[pos - 1] } else { b' ' };
-		let is_standalone_c = pos == 0 || !before_c.is_ascii_alphabetic();
-		
-		if is_standalone_c {
-			let after = &clean_name[pos + 1..];
-			let mut chapter_str = String::new();
-			let mut found_digit = false;
-			
-			for c in after.chars() {
-				if c.is_ascii_digit() {
-					chapter_str.push(c);
-					found_digit = true;
-				} else if c == '.' && found_digit {
-					chapter_str.push(c);
-				} else if found_digit {
-					break;
-				}
-			}
-			
-			if !chapter_str.is_empty() {
-				if let Ok(ch) = chapter_str.parse::<f32>() {
-					info.chapter = ch;
-					return info;
-				}
-			}
-		}
-	}
-
-    // (3) Alternatively, if an explicit "c" marker is present (and not part of a word).
+    // (2) Look for an explicit chapter marker using 'c'.
     if let Some(pos) = clean_name.find('c') {
         if pos == 0 || !clean_name.as_bytes()[pos - 1].is_ascii_alphabetic() {
             let after = &clean_name[pos + 1..];
-            let chapter_str: String = after.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+            let mut chapter_str = String::new();
+            let mut found_digit = false;
+            // First, attempt to accumulate digits only after the first digit is seen.
+            for c in after.chars() {
+                if c.is_ascii_digit() {
+                    chapter_str.push(c);
+                    found_digit = true;
+                } else if c == '.' && found_digit {
+                    chapter_str.push(c);
+                } else if found_digit {
+                    break;
+                }
+            }
+            // Fallback: if nothing was collected, use a simpler approach.
+            if chapter_str.is_empty() {
+                chapter_str = after.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+            }
             if !chapter_str.is_empty() {
                 if let Ok(ch) = chapter_str.parse::<f32>() {
                     info.chapter = ch;
@@ -235,7 +213,7 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
         }
     }
 
-    // (4) Fallback: scan for a group of digits that appears after a non-alphanumeric delimiter.
+    // (3) Fallback: scan for a group of digits that appears after a non-alphanumeric delimiter.
     let chars: Vec<char> = clean_name.chars().collect();
     for i in 0..chars.len() {
         if chars[i].is_ascii_digit() {
@@ -258,7 +236,7 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
         }
     }
 
-    // (5) Final fallback: extract trailing digits.
+    // (4) Final fallback: extract trailing digits.
     let trailing: String = clean_name
         .chars()
         .rev()

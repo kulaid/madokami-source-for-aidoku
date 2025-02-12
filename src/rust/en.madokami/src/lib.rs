@@ -21,26 +21,24 @@ const BASE_URL: &str = "https://manga.madokami.al";
 
 /// Adds HTTP Basic authentication headers to a request if credentials are available.
 fn add_auth_to_request(request: Request) -> Request {
-    // Try to get the username and password from defaults.
-    // If any step fails, we just fall back to the original request.
-    let username = defaults_get("username")
-        .and_then(|v| v.as_string())
-        .map(|s| s.read())
-        .unwrap_or_default();
-    let password = defaults_get("password")
-        .and_then(|v| v.as_string())
-        .map(|s| s.read())
-        .unwrap_or_default();
+    let (username, password) = (
+        defaults_get("username")
+            .and_then(|v| v.as_string())
+            .map(|s| s.read())
+            .unwrap_or_default(),
+        defaults_get("password")
+            .and_then(|v| v.as_string())
+            .map(|s| s.read())
+            .unwrap_or_default(),
+    );
 
     if !username.is_empty() && !password.is_empty() {
         let auth = format!(
             "Basic {}",
             general_purpose::STANDARD.encode(format!("{}:{}", username, password))
         );
-        // Return a new request with the Authorization header.
         request.header("Authorization", &auth)
     } else {
-        // No credentials—return the original request unmodified.
         request
     }
 }
@@ -99,7 +97,6 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
     )
     .html()?;
     let mut chapters = Vec::new();
-    // Extract the manga title from the id for later parsing.
     let manga_title = extract_manga_title(&id);
     
     // Loop over each row in the chapter table.
@@ -127,12 +124,9 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
             
             // Parse chapter info from the filename.
             let info = parse_chapter_info(&title, &manga_title);
-            
-            // Whether it's a range or a single chapter, use the starting chapter number.
             let chapter_number = if info.chapter > 0.0 { info.chapter } else { -1.0 };
             
             // Create one chapter entry per file.
-            // The title is simply cleaned (file extension removed) without further modification.
             chapters.push(Chapter {
                 id: url.clone(),
                 title: clean_filename(&url_decode(&title)),
@@ -152,7 +146,6 @@ fn get_chapter_list(id: String) -> Result<Vec<Chapter>> {
 
 #[get_manga_details]
 fn get_manga_details(id: String) -> Result<Manga> {
-    // Initialize metadata containers
     let mut authors: Vec<String> = Vec::new();
     let mut genres: Vec<String> = Vec::new();
     let mut status = MangaStatus::Unknown;
