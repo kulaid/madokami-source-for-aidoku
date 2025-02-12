@@ -126,97 +126,82 @@ pub fn get_parent_path(path: &str) -> Option<String> {
 
 pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
     let mut info = ChapterInfo::default();
+
+    // Decode, lowercase, and clean the filename.
     let clean_name = clean_filename(&url_decode(filename).to_lowercase());
     let clean_manga = manga_title.to_lowercase();
 
+    // If the filename equals the manga title exactly, there's no chapter info.
     if clean_name.trim() == clean_manga.trim() {
         return info;
     }
 
-    if clean_name.starts_with(&clean_manga) {
-        let remaining = clean_name[clean_manga.len()..].trim();
-        let digits: String = remaining.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
-        if !digits.is_empty() {
-            if let Ok(num) = digits.parse::<f32>() {
+    // --- Volume Extraction ---
+    // Look for a volume marker in the form "(v<digits>)".
+    if let Some(start) = clean_name.find("(v") {
+        let vol_start = start + 2;
+        let vol_str: String = clean_name[vol_start..]
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect();
+        if !vol_str.is_empty() {
+            if let Ok(vol) = vol_str.parse::<f32>() {
+                info.volume = vol;
+            }
+        }
+    }
+
+    // --- Determine the Chapter Section ---
+    // If the filename contains " - ", assume the chapter info is in the last segment.
+    let chapter_section = if let Some(pos) = clean_name.rfind(" - ") {
+        clean_name[pos + 3..].trim()
+    } else {
+        clean_name.trim()
+    };
+
+    // --- Chapter Marker Extraction ---
+    // If the chapter section explicitly starts with 'c', extract digits immediately following it.
+    if chapter_section.starts_with('c') {
+        let after_c = chapter_section[1..].trim_start();
+        let chapter_digits: String = after_c.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if !chapter_digits.is_empty() {
+            if let Ok(num) = chapter_digits.parse::<f32>() {
                 info.chapter = num;
                 return info;
             }
         }
     }
 
-    // Handle volume parsing (unchanged)
-    if let Some(pos) = clean_name.find(" v") {
-        let after = &clean_name[pos + 2..];
-        let vol_str: String = after.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
-        if !vol_str.is_empty() {
-            if let Ok(vol) = vol_str.parse::<f32>() {
-                info.volume = vol;
-                return info;
-            }
-        }
-    }
-
-    // **Fix: Improved chapter detection logic**
-    if let Some(pos) = clean_name.find('c') {
-        if pos == 0 || !clean_name.as_bytes()[pos - 1].is_ascii_alphabetic() {
-            let after = &clean_name[pos + 1..];
-            let mut chapter_str = String::new();
-            let mut found_digit = false;
-            for c in after.chars() {
-                if c.is_ascii_digit() {
-                    chapter_str.push(c);
-                    found_digit = true;
-                } else if c == '.' && found_digit {
-                    chapter_str.push(c);
-                } else if found_digit {
-                    break;
-                }
-            }
-
-            // **Fix: Ensure leading zeros are handled properly**
-            if !chapter_str.is_empty() {
-                if let Ok(ch) = chapter_str.parse::<f32>() {
-                    info.chapter = ch;
-                    return info;
-                }
-            }
-        }
-    }
-
-    // **Ensure detection of standalone numbers**
-    let chars: Vec<char> = clean_name.chars().collect();
-    for i in 0..chars.len() {
-        if chars[i].is_ascii_digit() && (i == 0 || !chars[i - 1].is_alphanumeric()) {
-            let mut number_str = String::new();
-            let mut j = i;
-            while j < chars.len() && (chars[j].is_ascii_digit() || chars[j] == '.') {
-                number_str.push(chars[j]);
-                j += 1;
-            }
-            if !number_str.is_empty() {
-                if let Ok(num) = number_str.parse::<f32>() {
-                    if num < 1900.0 { // Avoid parsing as a year or large identifier
-                        info.chapter = num;
-                        return info;
-                    }
-                }
-            }
-        }
-    }
-
-    // **Fix: Extract trailing number as a last resort**
-    let trailing: String = clean_name
+    // --- Fallback: Use Trailing Digits from the Chapter Section ---
+    let trailing: String = chapter_section
         .chars()
         .rev()
-        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .take_while(|c| c.is_ascii_digit())
         .collect::<String>()
         .chars()
         .rev()
         .collect();
     if !trailing.is_empty() {
-        if let Ok(ch) = trailing.parse::<f32>() {
-            info.chapter = ch;
+        if let Ok(num) = trailing.parse::<f32>() {
+            info.chapter = num;
             return info;
+        }
+    }
+
+    // --- Additional Fallback ---
+    // If there is no " - " delimiter and the filename starts with the manga title,
+    // remove that portion and then take the leading digits from what remains.
+    if !clean_name.contains(" - ") && clean_name.starts_with(&clean_manga) {
+        let remaining = clean_name[clean_manga.len()..].trim();
+        let digits: String = remaining
+            .chars()
+            .take_while(|c| c.is_ascii_digit() || *c == '.')
+            .collect();
+        if !digits.is_empty() {
+            if let Ok(num) = digits.parse::<f32>() {
+                info.chapter = num;
+                return info;
+            }
         }
     }
 
