@@ -9,7 +9,7 @@ use aidoku::{
         net::{HttpMethod, Request},
         String, Vec,
     },
-    Chapter, Filter, FilterType, Manga, MangaPageResult, MangaStatus, MangaViewer, Page,
+    Chapter, DeepLink, Filter, FilterType, Manga, MangaPageResult, MangaStatus, MangaViewer, Page,
 };
 use base64::{engine::general_purpose, Engine};
 use alloc::format;
@@ -40,6 +40,35 @@ fn add_auth_to_request(mut request: Request) -> Request {
     request
 }
 
+#[handle_url]
+fn handle_url(url: String) -> Result<DeepLink> {
+    // Remove the base URL from the passed in URL so we work only with the path.
+    let url = url.replace(BASE_URL, "");
+    if url.starts_with("/reader") {
+        // If the URL starts with "/reader", we assume it points to a specific chapter.
+        // We take the part before "/reader" as the manga ID, and use the full URL as the chapter ID.
+        Ok(DeepLink {
+            manga: Some(Manga {
+                id: String::from(url.split("/reader").next().unwrap_or_default()),
+                ..Default::default()
+            }),
+            chapter: Some(Chapter {
+                id: url,
+                ..Default::default()
+            }),
+        })
+    } else {
+        // Otherwise, we treat the URL as pointing only to a manga.
+        Ok(DeepLink {
+            manga: Some(Manga {
+                id: url,
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+    }
+}
+
 #[get_manga_list]
 fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
     // Build URL based on whether a title filter is provided.
@@ -54,7 +83,6 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
         format!("{}/recent", BASE_URL)
     };
 
-    // Create a new request with extra headers: User-Agent and Accept.
     let request = Request::new(url.clone(), HttpMethod::Get)
         .header(
             "User-Agent",
@@ -62,26 +90,18 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
         )
         .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
 
-    // Fetch the HTML page using our helper, which also adds HTTP Basic auth if credentials exist.
     let html = add_auth_to_request(request).html()?;
 
-    // (Optional) Debug: If you suspect the returned HTML isn’t what you expect,
-    // uncomment the following line to return an error containing the raw HTML.
-    // return Err(aidoku::error::Error::from(html.html()));
-
-    // Choose the CSS selector based on the URL
     let selector = if url.ends_with("/recent") {
         "table.mobile-files-table tbody tr td:nth-child(1) a:nth-child(1)"
     } else {
         "div.container table tbody tr td:nth-child(1) a:nth-child(1)"
     };
 
-    // Process the selected nodes.
     let mut mangas = Vec::new();
     for element in html.select(selector).array() {
         if let Ok(node) = element.as_node() {
             let path = node.attr("href").read();
-            // Skip empty paths; if needed, adjust or remove the trailing slash check.
             if path.trim().is_empty() {
                 continue;
             }
@@ -153,7 +173,6 @@ fn get_manga_details(id: String) -> Result<Manga> {
     let mut cover_url = String::new();
     let mut parent_description = String::new();
 
-    // Use the last segment of the path (after trimming) as the directory name.
     let dir_name = id.trim_matches('/').rsplit('/').next().map(url_decode).unwrap_or_default();
 
     if let Some(parent_path) = get_parent_path(&id) {
@@ -223,7 +242,6 @@ fn get_manga_details(id: String) -> Result<Manga> {
 
 #[get_page_list]
 fn get_page_list(_manga_id: String, chapter_id: String) -> Result<Vec<Page>> {
-    // Remove any extra query parameter from the chapter_id.
     let chapter_id = chapter_id.split("?ch=").next().unwrap_or(&chapter_id);
     let html = add_auth_to_request(
         Request::new(format!("{}{}", BASE_URL, chapter_id), HttpMethod::Get)
