@@ -9,7 +9,7 @@ use aidoku::{
         net::{HttpMethod, Request},
         String, Vec,
     },
-    Chapter, DeepLink, Filter, FilterType, Manga, MangaPageResult, MangaStatus, MangaViewer, Page,
+    Chapter, Filter, FilterType, Manga, MangaPageResult, MangaStatus, MangaViewer, Page,
 };
 use base64::{engine::general_purpose, Engine};
 use alloc::format;
