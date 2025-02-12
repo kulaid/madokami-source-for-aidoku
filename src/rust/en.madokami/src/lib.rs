@@ -42,7 +42,7 @@ fn add_auth_to_request(mut request: Request) -> Request {
 
 #[get_manga_list]
 fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
-    // Build the URL based on whether a title filter is provided.
+    // Build URL based on whether a title filter is provided.
     let url = if let Some(query) = filters
         .into_iter()
         .find(|f| matches!(f.kind, FilterType::Title))
@@ -54,33 +54,46 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
         format!("{}/recent", BASE_URL)
     };
 
-    // Fetch the HTML with authentication.
-    let html = add_auth_to_request(Request::new(url.clone(), HttpMethod::Get)).html()?;
-    
-    // Use the appropriate CSS selector based on the URL.
+    // Create a new request with extra headers: User-Agent and Accept.
+    let request = Request::new(url.clone(), HttpMethod::Get)
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
+        )
+        .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+
+    // Fetch the HTML page using our helper, which also adds HTTP Basic auth if credentials exist.
+    let html = add_auth_to_request(request).html()?;
+
+    // (Optional) Debug: If you suspect the returned HTML isn’t what you expect,
+    // uncomment the following line to return an error containing the raw HTML.
+    // return Err(aidoku::error::Error::from(html.html()));
+
+    // Choose the CSS selector based on the URL
     let selector = if url.ends_with("/recent") {
         "table.mobile-files-table tbody tr td:nth-child(1) a:nth-child(1)"
     } else {
         "div.container table tbody tr td:nth-child(1) a:nth-child(1)"
     };
 
-    // Loop over each matching element and create a Manga entry
-    // only if the href does NOT end with a '/'.
+    // Process the selected nodes.
     let mut mangas = Vec::new();
     for element in html.select(selector).array() {
         if let Ok(node) = element.as_node() {
             let path = node.attr("href").read();
-            if !path.ends_with('/') {
-                mangas.push(Manga {
-                    id: path.clone(),
-                    title: extract_manga_title(&path),
-                    cover: String::new(),
-                    url: format!("{}{}", BASE_URL, path),
-                    status: MangaStatus::Unknown,
-                    viewer: MangaViewer::Rtl,
-                    ..Default::default()
-                });
+            // Skip empty paths; if needed, adjust or remove the trailing slash check.
+            if path.trim().is_empty() {
+                continue;
             }
+            mangas.push(Manga {
+                id: path.clone(),
+                title: extract_manga_title(&path),
+                cover: String::new(),
+                url: format!("{}{}", BASE_URL, path),
+                status: MangaStatus::Unknown,
+                viewer: MangaViewer::Rtl,
+                ..Default::default()
+            });
         }
     }
 
