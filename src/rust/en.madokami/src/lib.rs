@@ -42,7 +42,7 @@ fn add_auth_to_request(mut request: Request) -> Request {
 
 #[get_manga_list]
 fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
-    // Build URL based on whether a title filter is provided.
+    // Build the URL based on whether a title filter is provided.
     let url = if let Some(query) = filters
         .into_iter()
         .find(|f| matches!(f.kind, FilterType::Title))
@@ -54,27 +54,24 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
         format!("{}/recent", BASE_URL)
     };
 
+    // Fetch the HTML with authentication.
     let html = add_auth_to_request(Request::new(url.clone(), HttpMethod::Get)).html()?;
-
-    // Use a different CSS selector depending on the URL.
+    
+    // Use the appropriate CSS selector based on the URL.
     let selector = if url.ends_with("/recent") {
         "table.mobile-files-table tbody tr td:nth-child(1) a:nth-child(1)"
     } else {
         "div.container table tbody tr td:nth-child(1) a:nth-child(1)"
     };
 
-    // Build a list of manga entries without excluding links that end with '/'
-    let mangas = html
-        .select(selector)
-        .array()
-        .filter_map(|element| element.as_node().ok())
-        .filter_map(|node| {
+    // Loop over each matching element and create a Manga entry
+    // only if the href does NOT end with a '/'.
+    let mut mangas = Vec::new();
+    for element in html.select(selector).array() {
+        if let Ok(node) = element.as_node() {
             let path = node.attr("href").read();
-            // Only skip if the path is empty (trimmed)
-            if path.trim().is_empty() {
-                None
-            } else {
-                Some(Manga {
+            if !path.ends_with('/') {
+                mangas.push(Manga {
                     id: path.clone(),
                     title: extract_manga_title(&path),
                     cover: String::new(),
@@ -82,10 +79,10 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
                     status: MangaStatus::Unknown,
                     viewer: MangaViewer::Rtl,
                     ..Default::default()
-                })
+                });
             }
-        })
-        .collect::<Vec<Manga>>();
+        }
+    }
 
     Ok(MangaPageResult {
         manga: mangas,
