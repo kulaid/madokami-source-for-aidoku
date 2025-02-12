@@ -174,32 +174,19 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
     }
 
     // --- Volume Extraction ---
-    let mut check_volume = |text: &str| -> Option<f32> {
-        // Check for volume markers: v##, vol##, volume##
-        for marker in &["v", "vol", "volume"] {
-            for prefix in &["", " ", "("] {
-                let pattern = format!("{}{}", prefix, marker);
-                if let Some(pos) = text.to_lowercase().find(&pattern) {
-                    let after_marker = &text[pos + pattern.len()..];
-                    let vol_str: String = after_marker
-                        .trim_start()
-                        .chars()
-                        .take_while(|c| c.is_ascii_digit())
-                        .collect();
-                    if !vol_str.is_empty() {
-                        if let Ok(vol) = vol_str.parse::<f32>() {
-                            return Some(vol);
-                        }
-                    }
-                }
+    // Look for volume marker 'v' followed by digits, ignoring spaces
+    if let Some(pos) = truncated.to_lowercase().find('v') {
+        let after_v = &truncated[pos + 1..];
+        let vol_str: String = after_v
+            .trim_start() // Handle any spaces after 'v'
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect();
+        if !vol_str.is_empty() {
+            if let Ok(vol) = vol_str.parse::<f32>() {
+                info.volume = vol;
             }
         }
-        None
-    };
-
-    // Check for volume in the truncated string
-    if let Some(vol) = check_volume(&truncated) {
-        info.volume = vol;
     }
 
     // --- Determine the Chapter Section ---
