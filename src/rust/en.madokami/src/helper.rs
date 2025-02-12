@@ -174,10 +174,41 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
         truncated
     };
 
+    // --- Remove Volume Marker from the Chapter Section if Present ---
+    // If we already detected a volume and the chapter section ends with a volume marker,
+    // remove that marker so we don’t mistakenly extract its digits as chapter info.
+    let chapter_section_clean = if info.volume != 0.0 {
+        if let Some(v_pos) = chapter_section.rfind(" v") {
+            // Attempt to extract the digits following " v"
+            let candidate: String = chapter_section[v_pos + 2..]
+                .chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
+            if !candidate.is_empty() {
+                if let Ok(num) = candidate.parse::<f32>() {
+                    if (num - info.volume).abs() < 0.001 {
+                        // Remove the volume marker by taking everything before " v"
+                        chapter_section[..v_pos].trim().to_string()
+                    } else {
+                        chapter_section.to_string()
+                    }
+                } else {
+                    chapter_section.to_string()
+                }
+            } else {
+                chapter_section.to_string()
+            }
+        } else {
+            chapter_section.to_string()
+        }
+    } else {
+        chapter_section.to_string()
+    };
+
     // --- Chapter Extraction ---
-    // (A) If the chapter section explicitly starts with 'c', extract the digits immediately following.
-    if chapter_section.starts_with('c') {
-        let after_c = chapter_section[1..].trim_start();
+    // (A) If the (cleaned) chapter section explicitly starts with 'c', extract the digits immediately following.
+    if chapter_section_clean.starts_with('c') {
+        let after_c = chapter_section_clean[1..].trim_start();
         let digits: String = after_c.chars().take_while(|c| c.is_ascii_digit()).collect();
         if !digits.is_empty() {
             if let Ok(num) = digits.parse::<f32>() {
@@ -187,8 +218,8 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
         }
     }
 
-    // (B) Fallback: Extract the trailing group of digits from the chapter section.
-    let trailing: String = chapter_section
+    // (B) Fallback: Extract the trailing group of digits from the cleaned chapter section.
+    let trailing: String = chapter_section_clean
         .chars()
         .rev()
         .take_while(|c| c.is_ascii_digit())
@@ -196,20 +227,20 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
         .chars()
         .rev()
         .collect();
-	if !trailing.is_empty() {
-		if let Ok(num) = trailing.parse::<f32>() {
-			// If there is no delimiter, we detected a volume marker,
-			// and the trailing number equals the volume,
-			// then there is no separate chapter info.
-			if !truncated.contains(" - ") && info.volume != 0.0 && (num - info.volume).abs() < 0.001 {
-				return info; // Return early so fallback (C) is not executed.
-			} else {
-				info.chapter = num;
-				return info;
-			}
-		}
-	}
-
+    if !trailing.is_empty() {
+        if let Ok(num) = trailing.parse::<f32>() {
+            // If there's no " - " delimiter (i.e. the entire truncated name is used)
+            // and a volume marker was detected,
+            // and the trailing number equals the volume,
+            // then assume there's no separate chapter info.
+            if !truncated.contains(" - ") && info.volume != 0.0 && (num - info.volume).abs() < 0.001 {
+                return info; // Return early to avoid further chapter extraction.
+            } else {
+                info.chapter = num;
+                return info;
+            }
+        }
+    }
 
     // (C) Additional Fallback:
     // If there's no delimiter and the truncated name starts with the manga title,
