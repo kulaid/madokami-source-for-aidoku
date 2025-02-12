@@ -149,7 +149,6 @@ fn remove_excluded_title(filename: &str, manga_title: &str) -> String {
     
     filename.to_string()
 }
-}
 
 /// Parses chapter and volume information from a given filename,
 /// using the provided manga title for context.
