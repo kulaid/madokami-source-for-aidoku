@@ -63,14 +63,15 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
         "div.container table tbody tr td:nth-child(1) a:nth-child(1)"
     };
 
-    // Build a list of manga entries.
+    // Build a list of manga entries without excluding links that end with '/'
     let mangas = html
         .select(selector)
         .array()
         .filter_map(|element| element.as_node().ok())
         .filter_map(|node| {
             let path = node.attr("href").read();
-            if path.ends_with('/') {
+            // Only skip if the path is empty (trimmed)
+            if path.trim().is_empty() {
                 None
             } else {
                 Some(Manga {
