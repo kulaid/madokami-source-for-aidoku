@@ -195,7 +195,7 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
             }
             if !number_str.is_empty() {
                 if let Ok(num) = number_str.parse::<f32>() {
-                    if num < 1000.0 { // Avoid parsing as a year or large identifier
+                    if num < 1900.0 { // Avoid parsing as a year or large identifier
                         info.chapter = num;
                         return info;
                     }
