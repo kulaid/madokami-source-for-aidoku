@@ -127,7 +127,7 @@ pub fn get_parent_path(path: &str) -> Option<String> {
 pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
     let mut info = ChapterInfo::default();
 
-    // Decode, lowercase, and clean the filename.
+    // Decode, lowercase, and clean the filename and manga title.
     let clean_name = clean_filename(&url_decode(filename).to_lowercase());
     let clean_manga = manga_title.to_lowercase();
 
@@ -137,7 +137,7 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
     }
 
     // --- Volume Extraction ---
-    // Look for a volume marker in the form "(v<digits>)".
+    // First, try to detect a volume marker in the form "(v<digits>)"
     if let Some(start) = clean_name.find("(v") {
         let vol_start = start + 2;
         let vol_str: String = clean_name[vol_start..]
@@ -150,9 +150,19 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
             }
         }
     }
+    // If not found, also check for an unparenthesized volume marker like " v<digits>"
+    else if let Some(pos) = clean_name.find(" v") {
+        let after = &clean_name[pos + 2..];
+        let vol_str: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if !vol_str.is_empty() {
+            if let Ok(vol) = vol_str.parse::<f32>() {
+                info.volume = vol;
+            }
+        }
+    }
 
     // --- Determine the Chapter Section ---
-    // If the filename contains " - ", assume the chapter info is in the last segment.
+    // If the filename contains " - ", assume that the chapter info is in the last segment.
     let chapter_section = if let Some(pos) = clean_name.rfind(" - ") {
         clean_name[pos + 3..].trim()
     } else {
