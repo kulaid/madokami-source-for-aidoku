@@ -121,6 +121,7 @@ pub fn get_parent_path(path: &str) -> Option<String> {
     }
 }
 
+/// Loads an exclusion list from an external file at compile time.
 /// This file (exclusions.txt) should be in the same directory as helper.rs.
 fn get_exclusions() -> Vec<&'static str> {
     include_str!("exclusions.txt")
@@ -130,7 +131,8 @@ fn get_exclusions() -> Vec<&'static str> {
         .collect()
 }
 
-/// Returns a cleaned version of the filename with numbers from excluded titles removed
+/// Returns a cleaned version of the filename with numbers from excluded titles removed,
+/// but only when they appear in the same context as in the title
 fn clean_excluded_numbers(filename: &str, manga_title: &str) -> String {
     let exclusions = get_exclusions();
     let lower_filename = filename.to_lowercase();
@@ -140,26 +142,43 @@ fn clean_excluded_numbers(filename: &str, manga_title: &str) -> String {
         return filename.to_string();
     }
     
-    // Find all numbers in the title
     let mut cleaned = lower_filename;
-    let mut number_buffer = String::new();
+    
+    // Extract number patterns with their surrounding context
+    let mut i = 0;
     let title_chars: Vec<char> = lower_title.chars().collect();
     
-    for (i, &c) in title_chars.iter().enumerate() {
-        if c.is_ascii_digit() {
-            number_buffer.push(c);
+    while i < title_chars.len() {
+        if title_chars[i].is_ascii_digit() {
+            let mut number = String::new();
+            let start_idx = i;
             
-            // Check if this is the last character or next char is not a digit
-            if i == title_chars.len() - 1 || !title_chars[i + 1].is_ascii_digit() {
-                if !number_buffer.is_empty() {
-                    cleaned = cleaned.replace(&number_buffer, "");
-                    number_buffer.clear();
+            // Get the full number
+            while i < title_chars.len() && title_chars[i].is_ascii_digit() {
+                number.push(title_chars[i]);
+                i += 1;
+            }
+            
+            // Get surrounding context (up to 3 chars before and after)
+            let context_start = start_idx.saturating_sub(3);
+            let context_end = (i + 3).min(title_chars.len());
+            let pattern: String = title_chars[context_start..context_end].iter().collect();
+            
+            // Only remove the number if it appears with similar context
+            // Skip if the number appears after 'v' or 'c' (likely volume/chapter markers)
+            if let Some(pos) = cleaned.find(&pattern) {
+                let before_char = if pos > 0 {
+                    cleaned.chars().nth(pos - 1)
+                } else {
+                    None
+                };
+                
+                if before_char != Some('v') && before_char != Some('c') {
+                    cleaned = cleaned.replacen(&pattern, &pattern.replace(&number, ""), 1);
                 }
             }
-        } else if !number_buffer.is_empty() {
-            cleaned = cleaned.replace(&number_buffer, "");
-            number_buffer.clear();
         }
+        i += 1;
     }
     
     cleaned
