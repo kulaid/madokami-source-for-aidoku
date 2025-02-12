@@ -1,5 +1,7 @@
 use aidoku::std::String;
 use alloc::{vec::Vec, format};
+// Bring the ToString trait into scope so that .to_string() works.
+use alloc::string::ToString;
 
 #[derive(Default)]
 pub struct ChapterInfo {
