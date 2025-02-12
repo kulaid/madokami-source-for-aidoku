@@ -42,7 +42,7 @@ fn add_auth_to_request(mut request: Request) -> Request {
 
 #[get_manga_list]
 fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
-    // Construct the URL: if a title filter is provided, use search; otherwise, use the recent page.
+    // Build URL based on whether a title filter is provided.
     let url = if let Some(query) = filters
         .into_iter()
         .find(|f| matches!(f.kind, FilterType::Title))
@@ -54,51 +54,48 @@ fn get_manga_list(filters: Vec<Filter>, _page: i32) -> Result<MangaPageResult> {
         format!("{}/recent", BASE_URL)
     };
 
-    // Build a request with extra headers to ensure we receive the full HTML.
+    // Create a new request with extra headers: User-Agent and Accept.
     let request = Request::new(url.clone(), HttpMethod::Get)
         .header(
             "User-Agent",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
         )
-        .header(
-            "Accept",
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        );
+        .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
 
-    // Fetch the HTML using our helper that adds HTTP Basic authentication.
+    // Fetch the HTML page using our helper, which also adds HTTP Basic auth if credentials exist.
     let html = add_auth_to_request(request).html()?;
 
-    // Select the proper CSS selector based on the URL.
+    // (Optional) Debug: If you suspect the returned HTML isn’t what you expect,
+    // uncomment the following line to return an error containing the raw HTML.
+    // return Err(aidoku::error::Error::from(html.html()));
+
+    // Choose the CSS selector based on the URL
     let selector = if url.ends_with("/recent") {
         "table.mobile-files-table tbody tr td:nth-child(1) a:nth-child(1)"
     } else {
         "div.container table tbody tr td:nth-child(1) a:nth-child(1)"
     };
 
-    // Process the selected nodes to build a list of Manga.
-    let mangas = html
-        .select(selector)
-        .array()
-        .into_iter()
-        .filter_map(|element| element.as_node().ok())
-        .filter_map(|node| {
+    // Process the selected nodes.
+    let mut mangas = Vec::new();
+    for element in html.select(selector).array() {
+        if let Ok(node) = element.as_node() {
             let path = node.attr("href").read();
-            // Skip only if the path is empty.
+            // Skip empty paths; if needed, adjust or remove the trailing slash check.
             if path.trim().is_empty() {
-                None
-            } else {
-                Some(Manga {
-                    id: path.clone(),
-                    title: extract_manga_title(&path),
-                    cover: String::new(),
-                    url: format!("{}{}", BASE_URL, path),
-                    status: MangaStatus::Unknown,
-                    viewer: MangaViewer::Rtl,
-                    ..Default::default()
-                })
+                continue;
             }
-        })
-        .collect::<Vec<Manga>>();
+            mangas.push(Manga {
+                id: path.clone(),
+                title: extract_manga_title(&path),
+                cover: String::new(),
+                url: format!("{}{}", BASE_URL, path),
+                status: MangaStatus::Unknown,
+                viewer: MangaViewer::Rtl,
+                ..Default::default()
+            });
+        }
+    }
 
     Ok(MangaPageResult {
         manga: mangas,
