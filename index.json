@@ -1,0 +1,20 @@
+[
+  {
+    "id": "en.madokami",
+    "name": "Madokami",
+    "file": "en.madokami-v1.aix",
+    "icon": "en.madokami-v1.png",
+    "lang": "en",
+    "version": 1,
+    "nsfw": 0
+  },
+  {
+    "id": "multi.cubari",
+    "name": "Cubari",
+    "file": "multi.cubari-v1.aix",
+    "icon": "multi.cubari-v1.png",
+    "lang": "multi",
+    "version": 1,
+    "nsfw": 0
+  }
+]
