@@ -174,19 +174,29 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
     }
 
     // --- Volume Extraction ---
-    // Look for volume marker 'v' followed by digits, ignoring spaces
-    if let Some(pos) = truncated.to_lowercase().find('v') {
+    // Iterate through each 'v' occurrence and only accept one that is followed by digits.
+    let lower_truncated = truncated.to_lowercase();
+    let mut search_index = 0;
+    while let Some(pos) = lower_truncated[search_index..].find('v') {
+        let pos = search_index + pos;
         let after_v = &truncated[pos + 1..];
-        let vol_str: String = after_v
-            .trim_start() // Handle any spaces after 'v'
-            .chars()
-            .take_while(|c| c.is_ascii_digit())
-            .collect();
-        if !vol_str.is_empty() {
-            if let Ok(vol) = vol_str.parse::<f32>() {
-                info.volume = vol;
+        let after_v_trim = after_v.trim_start();
+        if let Some(first_char) = after_v_trim.chars().next() {
+            if first_char.is_ascii_digit() {
+                // Valid volume marker found!
+                let vol_str: String = after_v_trim
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect();
+                if !vol_str.is_empty() {
+                    if let Ok(vol) = vol_str.parse::<f32>() {
+                        info.volume = vol;
+                        break;
+                    }
+                }
             }
         }
+        search_index = pos + 1;
     }
 
     // --- Determine the Chapter Section ---
@@ -225,7 +235,7 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
 
     // --- Chapter Extraction ---
     // (A) If the cleaned chapter section explicitly starts with 'c',
-    // extract the digits immediately following
+    // extract the digits immediately following.
     if chapter_section_clean.starts_with('c') {
         let after_c = chapter_section_clean[1..].trim_start();
         let digits: String = after_c.chars().take_while(|c| c.is_ascii_digit()).collect();
@@ -242,12 +252,11 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
     let mut start_idx = end_idx;
     let chars: Vec<char> = chapter_section_clean.chars().collect();
     
-    // Find the end of the number (going backwards)
+    // Find the start of the trailing number (walking backwards)
     while start_idx > 0 && (chars[start_idx - 1].is_ascii_digit() || chars[start_idx - 1] == '.') {
         start_idx -= 1;
     }
     
-    // Only process if we found some digits
     if start_idx < end_idx {
         let number_str = &chapter_section_clean[start_idx..end_idx];
         // Only parse if it starts with a digit (avoid parsing just ".")
@@ -263,7 +272,7 @@ pub fn parse_chapter_info(filename: &str, manga_title: &str) -> ChapterInfo {
         }
     }
 
-    // (C) Additional Fallback
+    // (C) Additional Fallback: If the truncated string starts with the manga title
     if !truncated.contains(" - ") && truncated.starts_with(&clean_manga) {
         let remaining = truncated[clean_manga.len()..].trim();
         let digits: String = remaining.chars().take_while(|c| c.is_ascii_digit()).collect();
