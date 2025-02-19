@@ -1,5 +1,5 @@
 images in list view do not work because of aidoku limitations
-
+cubari is not by me i added it for personal convenience
 ## Usage
 [Add this source list](https://aidoku.app/add-source-list/?url=https://raw.githubusercontent.com/kulaid/madokami-source-for-aidoku/gh-pages/) to the Aidoku app. (Madokami Repo)
 
